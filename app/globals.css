@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --sand: #FFECD1;
+    --chocolate: #3E000C;
+    --chocolate-deep: #2A0008;
+    --chocolate-surface: #4A0512;
+    --chocolate-border: rgba(62, 0, 12, 0.12);
+    --sand-surface: #FFF5E6;
+    --sand-card: #FFFFFF;
+
+    --background: #FFECD1;
+    --foreground: #3E000C;
+    --border: rgba(62, 0, 12, 0.12);
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    background-color: #FFECD1;
+    color: #3E000C;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    background-color: #FFECD1;
+    color: #3E000C;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background-color: #3E000C;
+    color: #FFECD1;
+  }
+
+  /* Minimal custom scrollbar in Sand & Chocolate */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #FFECD1;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(62, 0, 12, 0.25);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(62, 0, 12, 0.45);
+  }
+}
+
+/* Default clean color tones for map (no harsh red/invert filters) */
+.leaflet-container {
+  background: #f4ede2 !important;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+  z-index: 10 !important;
+}
+
+/* Fix Leaflet z-index bleeding over navbar */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 20 !important;
+}
+
+.leaflet-bar {
+  border: 1px solid rgba(62, 0, 12, 0.15) !important;
+  box-shadow: 0 2px 10px rgba(62, 0, 12, 0.1) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+
+.leaflet-bar a {
+  background-color: #FFFFFF !important;
+  color: #3E000C !important;
+  border-bottom: 1px solid rgba(62, 0, 12, 0.1) !important;
+}
+
+.leaflet-bar a:hover {
+  background-color: #FFECD1 !important;
+  color: #3E000C !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #FFFFFF !important;
+  color: #3E000C !important;
+  border: 1px solid rgba(62, 0, 12, 0.15) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 24px rgba(62, 0, 12, 0.12) !important;
+}
+
+.leaflet-popup-tip {
+  background: #FFFFFF !important;
+}
