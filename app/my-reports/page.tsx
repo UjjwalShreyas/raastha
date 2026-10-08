@@ -1,75 +1,75 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   CheckCircle2,
   Clock,
   FileText,
+  AlertTriangle,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { HazardIssue } from "@/lib/mockData";
-import { Button } from "@/components/ui/Button";
+import { useIssues } from "@/context/IssuesContext";
 
 export default function MyReportsPage() {
-  const { citizenHistory, updateIssueStatus, t } = useApp();
+  const { t } = useApp();
+  const { issues, isConfigured } = useIssues();
 
-  const [filterStatus, setFilterStatus] = useState<"All" | "Pending" | "In Progress" | "Resolved">("All");
-  const [verifyingIssue, setVerifyingIssue] = useState<HazardIssue | null>(null);
-  const [afterPhotoUrl, setAfterPhotoUrl] = useState<string>("");
-  const [resolutionNotes, setResolutionNotes] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<"All" | "reported" | "in_progress" | "resolved">("All");
 
-  const filteredIssues = citizenHistory.filter((issue) => {
+  const filteredIssues = issues.filter((issue) => {
     if (filterStatus === "All") return true;
+    if (filterStatus === "in_progress") {
+      return issue.status === "dispatched" || issue.status === "in_progress";
+    }
     return issue.status === filterStatus;
   });
 
-  const handleConfirmFix = () => {
-    if (!verifyingIssue) return;
-
-    updateIssueStatus(
-      verifyingIssue.id,
-      "Resolved",
-      afterPhotoUrl || "https://images.unsplash.com/photo-1584467735871-8e85353a8413?w=600&auto=format&fit=crop&q=80",
-      resolutionNotes || "Fix verified by reporting citizen."
-    );
-
-    setVerifyingIssue(null);
-    setAfterPhotoUrl("");
-    setResolutionNotes("");
-  };
-
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8 font-sans">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#3E000C]/12 pb-5">
         <div>
           <h1 className="text-2xl font-bold text-[#3E000C] flex items-center gap-2.5">
             <CheckCircle2 className="w-6 h-6 text-[#3E000C]" />
-            <span>My Reported Issues</span>
+            <span>My Reported Issues & Proofs</span>
           </h1>
           <p className="text-[#3E000C]/65 text-xs mt-1">
-            Track resolution status, SLA deadlines and verify completed fixes
+            Live database sync: track dispatch squads and AI Before/After verified repair proofs
           </p>
         </div>
 
         {/* Minimalist Filter Tabs */}
         <div className="flex items-center bg-[#FFFFFF]/80 border border-[#3E000C]/15 p-0.5 rounded-xl text-xs shadow-2xs">
-          {(["All", "Pending", "In Progress", "Resolved"] as const).map((st) => (
+          {[
+            { id: "All", label: "All" },
+            { id: "reported", label: "Reported" },
+            { id: "in_progress", label: "In Progress" },
+            { id: "resolved", label: "Resolved" },
+          ].map((tab) => (
             <button
-              key={st}
-              onClick={() => setFilterStatus(st)}
+              key={tab.id}
+              onClick={() => setFilterStatus(tab.id as any)}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-                filterStatus === st
+                filterStatus === tab.id
                   ? "bg-[#3E000C] text-[#FFECD1] font-semibold"
                   : "text-[#3E000C]/70 hover:text-[#3E000C]"
               }`}
             >
-              {st}
+              {tab.label}
             </button>
           ))}
         </div>
       </div>
+
+      {!isConfigured && (
+        <div className="bg-amber-100/90 border border-amber-300 text-amber-900 rounded-2xl p-3.5 text-xs flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+          <span>
+            <strong>Backend Notice:</strong> Supabase credentials not detected in <code>.env.local</code>. Running in local browser demo mode.
+          </span>
+        </div>
+      )}
 
       {/* Reports List */}
       <div className="space-y-3.5">
@@ -77,7 +77,7 @@ export default function MyReportsPage() {
           <div className="bg-[#FFFFFF]/75 border border-[#3E000C]/12 rounded-2xl p-12 text-center text-[#3E000C]/60 space-y-2 shadow-2xs">
             <FileText className="w-10 h-10 text-[#3E000C]/40 mx-auto" />
             <h3 className="text-sm font-semibold text-[#3E000C]">No reports found</h3>
-            <p className="text-xs text-[#3E000C]/60">No hazard reports matching this filter.</p>
+            <p className="text-xs text-[#3E000C]/60">Submit a hazard report from the Report page to see live updates.</p>
           </div>
         ) : (
           filteredIssues.map((issue) => (
@@ -89,30 +89,33 @@ export default function MyReportsPage() {
               className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-2xl p-5 hover:border-[#3E000C]/35 transition-colors space-y-4 shadow-xs"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#3E000C]/10">
-                <div className="flex items-center gap-2.5">
-                  <span className="font-mono text-[11px] text-[#3E000C]/70 px-2 py-0.5 rounded bg-[#3E000C]/8 border border-[#3E000C]/15">
-                    {issue.trackingId}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="font-mono text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded bg-[#3E000C]/8 border border-[#3E000C]/12">
+                    {issue.tracking_id}
                   </span>
-                  <h3 className="text-sm font-semibold text-[#3E000C]">{issue.title}</h3>
+                  <span className="text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded-full bg-[#3E000C] text-[#FFECD1]">
+                    Sev {issue.severity}/5
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#3E000C]/8 text-[#3E000C]">
+                    {issue.type}
+                  </span>
+                  <h3 className="text-sm font-semibold text-[#3E000C]">
+                    {issue.description || `${issue.type} on ${issue.ward}`}
+                  </h3>
                 </div>
 
-                {/* Status Badges */}
-                <div className="flex items-center gap-2">
+                {/* Status Badge */}
+                <div className="flex items-center gap-2 shrink-0">
                   <span
-                    className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
-                      issue.status === "Resolved"
+                    className={`px-2.5 py-0.5 rounded-md text-xs font-bold uppercase border ${
+                      issue.status === "resolved"
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : issue.status === "dispatched" || issue.status === "in_progress"
                         ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C]"
-                        : issue.status === "In Progress"
-                        ? "bg-[#3E000C]/12 text-[#3E000C] border-[#3E000C]/25"
-                        : "bg-[#3E000C]/6 text-[#3E000C] border-[#3E000C]/15"
+                        : "bg-[#3E000C]/8 text-[#3E000C] border-[#3E000C]/15"
                     }`}
                   >
-                    {issue.status}
-                  </span>
-
-                  <span className="text-[11px] text-[#3E000C]/70 font-medium flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-[#3E000C]/60" />
-                    SLA: {issue.slaFormatted}
+                    {issue.status.replace("_", " ")}
                   </span>
                 </div>
               </div>
@@ -122,26 +125,26 @@ export default function MyReportsPage() {
                 {/* Before / After Photos */}
                 <div className="md:col-span-5 flex gap-2.5">
                   <div className="flex-1 space-y-1">
-                    <span className="text-[10px] text-[#3E000C]/60 uppercase font-medium block">
-                      Before
+                    <span className="text-[10px] text-[#3E000C]/60 uppercase font-bold block">
+                      Before (Reported)
                     </span>
-                    <div className="h-28 rounded-xl overflow-hidden border border-[#3E000C]/15">
+                    <div className="h-28 rounded-xl overflow-hidden border border-[#3E000C]/15 bg-black/5">
                       <img
-                        src={issue.beforePhoto}
+                        src={issue.photo_url}
                         alt="Before hazard"
                         className="w-full h-full object-cover"
                       />
                     </div>
                   </div>
 
-                  {issue.afterPhoto ? (
+                  {issue.after_photo_url ? (
                     <div className="flex-1 space-y-1">
-                      <span className="text-[10px] text-[#3E000C] uppercase font-bold block">
-                        After
+                      <span className="text-[10px] text-emerald-800 uppercase font-bold block">
+                        After (Repaired)
                       </span>
-                      <div className="h-28 rounded-xl overflow-hidden border border-[#3E000C]/35">
+                      <div className="h-28 rounded-xl overflow-hidden border border-emerald-400">
                         <img
-                          src={issue.afterPhoto}
+                          src={issue.after_photo_url}
                           alt="After fix"
                           className="w-full h-full object-cover"
                         />
@@ -149,12 +152,12 @@ export default function MyReportsPage() {
                     </div>
                   ) : (
                     <div className="flex-1 space-y-1">
-                      <span className="text-[10px] text-[#3E000C]/50 uppercase font-medium block">
-                        After
+                      <span className="text-[10px] text-[#3E000C]/50 uppercase font-semibold block">
+                        After Proof
                       </span>
                       <div className="h-28 rounded-xl bg-[#FFECD1]/40 border border-dashed border-[#3E000C]/20 flex flex-col items-center justify-center text-[#3E000C]/60 p-2 text-center">
                         <Clock className="w-5 h-5 mb-1 text-[#3E000C]/40" />
-                        <span className="text-[10px]">Awaiting repair</span>
+                        <span className="text-[10px] font-medium">Awaiting repair</span>
                       </div>
                     </div>
                   )}
@@ -164,36 +167,16 @@ export default function MyReportsPage() {
                 <div className="md:col-span-7 space-y-2.5">
                   <div className="bg-[#FFECD1]/20 p-3 rounded-xl border border-[#3E000C]/10 space-y-1 text-xs">
                     <div className="flex items-center justify-between text-[#3E000C]">
-                      <span className="font-medium">{issue.location.address}</span>
-                      <span className="text-[#3E000C]/60">{issue.location.ward}</span>
+                      <span className="font-semibold">{issue.ward || "Circle 20 - Serilingampally, Hyderabad"}</span>
+                      <span className="text-[#3E000C]/60 font-mono text-[11px]">
+                        {new Date(issue.created_at).toLocaleDateString()}
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-[#3E000C]/70 pt-1">
-                      <span>AI: <strong className="text-[#3E000C] font-semibold">{issue.aiClassification.detectedObject}</strong></span>
-                      <span>Commuters: <strong className="text-[#3E000C] font-semibold">{issue.exposureCount}</strong></span>
-                    </div>
-
-                    {issue.resolutionNotes && (
-                      <div className="text-[11px] text-[#3E000C] pt-1 mt-1 border-t border-[#3E000C]/10">
-                        Note: {issue.resolutionNotes}
+                    {issue.ai_summary && (
+                      <div className="text-[11px] text-[#3E000C]/80 pt-1">
+                        <strong>AI Summary:</strong> {issue.ai_summary}
                       </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-[11px] text-[#3E000C]/60">
-                      Reported: {issue.reportedAt} | Priority: {issue.priorityScore} pts
-                    </span>
-
-                    {issue.status !== "Resolved" && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => setVerifyingIssue(issue)}
-                        leftIcon={<CheckCircle2 className="w-3.5 h-3.5" />}
-                      >
-                        Verify Fix
-                      </Button>
                     )}
                   </div>
                 </div>
@@ -202,74 +185,6 @@ export default function MyReportsPage() {
           ))
         )}
       </div>
-
-      {/* Fix Verification Modal */}
-      <AnimatePresence>
-        {verifyingIssue && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              className="w-full max-w-md bg-white border border-[#3E000C]/20 rounded-2xl p-6 space-y-4 shadow-xl text-[#3E000C]"
-            >
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-[#3E000C]">
-                  Verify Repair for {verifyingIssue.trackingId}
-                </h3>
-                <p className="text-xs text-[#3E000C]/65">
-                  Confirm hazard repair and enter optional resolution notes.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-[#3E000C]/75 block">
-                    After Photo URL (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="https://... (or leave blank for default)"
-                    value={afterPhotoUrl}
-                    onChange={(e) => setAfterPhotoUrl(e.target.value)}
-                    className="w-full bg-[#FFECD1]/20 border border-[#3E000C]/20 rounded-xl p-2.5 text-xs text-[#3E000C] focus:outline-none focus:border-[#3E000C]/50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-[#3E000C]/75 block">
-                    Verification Notes
-                  </label>
-                  <textarea
-                    placeholder="e.g. Pothole filled and leveled, road surface smooth."
-                    value={resolutionNotes}
-                    onChange={(e) => setResolutionNotes(e.target.value)}
-                    className="w-full bg-[#FFECD1]/20 border border-[#3E000C]/20 rounded-xl p-2.5 text-xs text-[#3E000C] focus:outline-none focus:border-[#3E000C]/50 h-16 resize-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2.5 pt-1">
-                <Button
-                  variant="primary"
-                  size="md"
-                  className="flex-1"
-                  onClick={handleConfirmFix}
-                >
-                  Confirm & Close Issue
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="md"
-                  onClick={() => setVerifyingIssue(null)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

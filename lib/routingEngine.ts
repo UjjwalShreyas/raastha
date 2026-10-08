@@ -21,7 +21,7 @@ export interface ComputedRoute {
 // Compute safety score by sampling route points against open issues in the area
 export function scoreRouteSafety(
   coordinates: [number, number][],
-  activeHazards: HazardIssue[]
+  activeHazards: any[]
 ): {
   safetyScore: number;
   hazardsAvoided: number;
@@ -34,19 +34,25 @@ export function scoreRouteSafety(
   const nearbyTypes: string[] = [];
 
   activeHazards.forEach((hazard) => {
-    if (hazard.status === "Resolved") return;
+    const status = (hazard.status || "").toLowerCase();
+    if (status === "resolved") return;
+
+    const hLat = hazard.lat ?? hazard.location?.lat;
+    const hLng = hazard.lng ?? hazard.location?.lng;
+    if (hLat == null || hLng == null) return;
 
     // Check if any point on the route is within 50m of this hazard
     const isClose = coordinates.some((pt) => {
-      const dist = getDistanceInMeters(pt[0], pt[1], hazard.location.lat, hazard.location.lng);
+      const dist = getDistanceInMeters(pt[0], pt[1], hLat, hLng);
       return dist <= PROXIMITY_THRESHOLD_METERS;
     });
 
     if (isClose) {
       nearbyHazardsCount += 1;
-      penaltyPoints += hazard.severity * 6;
-      if (!nearbyTypes.includes(hazard.type)) {
-        nearbyTypes.push(hazard.type);
+      penaltyPoints += (hazard.severity || 3) * 6;
+      const hType = hazard.type || "Hazard";
+      if (!nearbyTypes.includes(hType)) {
+        nearbyTypes.push(hType);
       }
     }
   });
@@ -76,7 +82,7 @@ export async function fetchOsrmRoute(
   startLng: number,
   endLat: number,
   endLng: number,
-  activeHazards: HazardIssue[]
+  activeHazards: any[]
 ): Promise<{ safest: ComputedRoute; fastest: ComputedRoute }> {
   try {
     const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&steps=true`;

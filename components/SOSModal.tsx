@@ -4,11 +4,20 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldAlert, PhoneCall, Radio, X, Share2, MessageCircle, Copy, Check } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { useLocation } from "@/context/LocationContext";
 import { Button } from "./ui/Button";
 
 export function SOSModal() {
-  const { sosActive, dismissSOS, coordinates, locationAccuracy } = useApp();
+  const { sosActive, dismissSOS } = useApp();
+  const { coordinates, accuracy, requestLocation, isReal } = useLocation();
   const [copied, setCopied] = useState<boolean>(false);
+
+  // Request high-accuracy GPS only when SOS is active and not already acquired
+  React.useEffect(() => {
+    if (sosActive && !isReal) {
+      requestLocation();
+    }
+  }, [sosActive, isReal, requestLocation]);
 
   if (!sosActive) return null;
 
@@ -86,7 +95,7 @@ export function SOSModal() {
                   Live GPS Signal
                 </span>
                 <span className="text-[#FFECD1] font-mono text-[10px]">
-                  Accuracy: ±{locationAccuracy || 12}m
+                  Accuracy: ±{accuracy || 12}m
                 </span>
               </div>
               <div className="text-xs font-mono font-bold text-[#FFECD1] flex items-center justify-between">

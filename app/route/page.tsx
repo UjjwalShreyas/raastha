@@ -16,13 +16,17 @@ import {
   Info,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { useIssues } from "@/context/IssuesContext";
+import { useLocation } from "@/context/LocationContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { MOCK_DESTINATIONS, MOCK_BASE_COORDINATES } from "@/lib/mockData";
 import { fetchOsrmRoute, ComputedRoute } from "@/lib/routingEngine";
 import { Button } from "@/components/ui/Button";
 
 export default function SafeRoutePage() {
-  const { language, voice, triggerSOS, issues, coordinates, t } = useApp();
+  const { language, voice, triggerSOS, t } = useApp();
+  const { issues } = useIssues();
+  const { coordinates, requestLocation, isReal } = useLocation();
 
   const [selectedDestIndex, setSelectedDestIndex] = useState<number>(0);
   const [selectedRouteId, setSelectedRouteId] = useState<"fastest" | "safest">("safest");
@@ -132,9 +136,9 @@ export default function SafeRoutePage() {
   // Map hazard markers so user sees how route avoids them
   const hazardMarkers = issues.map((iss) => ({
     id: iss.id,
-    lat: iss.location.lat,
-    lng: iss.location.lng,
-    title: iss.title,
+    lat: iss.lat,
+    lng: iss.lng,
+    title: iss.description || `${iss.type} on ${iss.ward}`,
     type: iss.type,
     severity: iss.severity,
   }));

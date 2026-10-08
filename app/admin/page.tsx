@@ -24,21 +24,24 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { useIssues, Issue } from "@/context/IssuesContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { Button } from "@/components/ui/Button";
-import { HazardIssue } from "@/lib/mockData";
 
 export default function AdminWardPortalPage() {
   const {
-    issues,
-    updateIssueStatus,
-    unreadAlertCount,
-    clearUnreadAlerts,
-    highPriorityToast,
     isOfficerAuthenticated,
     setOfficerAuthenticated,
     t,
   } = useApp();
+
+  const {
+    issues,
+    updateIssueStatus,
+    latestAlert,
+    clearAlert,
+    isConfigured,
+  } = useIssues();
 
   // Login form state
   const [officerIdInput, setOfficerIdInput] = useState<string>("GHMC-OFFICER-104");
@@ -51,7 +54,7 @@ export default function AdminWardPortalPage() {
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
 
   // AI Fix Verification Modal state
-  const [verifyingIssue, setVerifyingIssue] = useState<HazardIssue | null>(null);
+  const [verifyingIssue, setVerifyingIssue] = useState<Issue | null>(null);
   const [afterPhotoUrl, setAfterPhotoUrl] = useState<string>(
     "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=600&auto=format&fit=crop&q=80"
   );
@@ -151,31 +154,32 @@ export default function AdminWardPortalPage() {
   }
 
   const filteredIssues = issues.filter((iss) => {
-    if (selectedWard !== "All Circles" && !iss.location.ward.includes(selectedWard)) {
+    if (selectedWard !== "All Circles" && iss.ward && !iss.ward.includes(selectedWard)) {
       return false;
     }
-    if (selectedCategory !== "All Types" && iss.type !== selectedCategory) {
+    if (selectedCategory !== "All Types" && iss.type.toLowerCase() !== selectedCategory.toLowerCase()) {
       return false;
     }
     return true;
   });
 
-  const prioritySortedIssues = [...filteredIssues].sort(
-    (a, b) => b.priorityScore - a.priorityScore
-  );
+  const prioritySortedIssues = [...filteredIssues].sort((a, b) => {
+    const scoreA = Math.round((a.severity * 3500) / 100);
+    const scoreB = Math.round((b.severity * 3500) / 100);
+    return scoreB - scoreA;
+  });
 
   const handleDispatchUnit = async (id: string) => {
     setDispatchingId(id);
     await updateIssueStatus(
       id,
-      "In Progress",
-      undefined,
-      "Assigned to GHMC Rapid Asphalt Squad #4 (Serilingampally Circle)"
+      "dispatched",
+      { note: "Assigned to GHMC Rapid Asphalt Squad #4 (Serilingampally Circle)" }
     );
     setDispatchingId(null);
   };
 
-  const handleOpenVerifyModal = (issue: HazardIssue) => {
+  const handleOpenVerifyModal = (issue: Issue) => {
     setVerifyingIssue(issue);
     setVerificationResult(null);
   };
@@ -189,7 +193,7 @@ export default function AdminWardPortalPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          beforeImage: verifyingIssue.beforePhoto,
+          beforeImage: verifyingIssue.photo_url,
           afterImage: afterPhotoUrl,
           hazardType: verifyingIssue.type,
         }),
@@ -210,43 +214,59 @@ export default function AdminWardPortalPage() {
     if (!verifyingIssue) return;
     await updateIssueStatus(
       verifyingIssue.id,
-      "Resolved",
-      afterPhotoUrl,
-      verificationResult?.civilNotes || "Repair verified by Municipal Engineering Unit."
+      "resolved",
+      {
+        afterPhoto: afterPhotoUrl,
+        note: verificationResult?.civilNotes || "Repair verified by Municipal Engineering Unit.",
+      }
     );
     setVerifyingIssue(null);
   };
 
   const totalReported = issues.length;
-  const overdueCount = issues.filter((i) => i.slaMinutesRemaining < 0 && i.status !== "Resolved").length;
-  const inProgressCount = issues.filter((i) => i.status === "In Progress").length;
-  const totalCommutersImpacted = issues.reduce((acc, i) => acc + i.exposureCount, 0);
+  const inProgressCount = issues.filter((i) => i.status === "dispatched" || i.status === "in_progress").length;
+  const resolvedCount = issues.filter((i) => i.status === "resolved").length;
+  const overdueCount = issues.filter((i) => i.status === "reported" && (Date.now() - new Date(i.created_at).getTime() > 4 * 3600 * 1000)).length;
+  const totalCommutersImpacted = issues.length * 3500;
+  const unreadAlertCount = issues.filter((i) => i.severity >= 4 && i.status === "reported").length;
 
   const wardMapMarkers = prioritySortedIssues.map((i) => ({
     id: i.id,
-    lat: i.location.lat,
-    lng: i.location.lng,
-    title: i.title,
+    lat: i.lat,
+    lng: i.lng,
+    title: i.description || `${i.type} on ${i.ward || "Road"}`,
     type: i.type,
     severity: i.severity,
-    description: `Priority: ${i.priorityScore} (${i.exposureCount} commuters proxy)`,
+    description: `Tracking: ${i.tracking_id} | Status: ${i.status}`,
   }));
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8 font-sans">
-      {/* Toast Alert for Live Influx of Severity 4-5 Hazards */}
-      {highPriorityToast && (
-        <div className="p-3 bg-red-900/10 border border-red-900/25 rounded-2xl flex items-center justify-between text-xs text-red-900">
-          <div className="flex items-center gap-2 font-bold">
-            <AlertTriangle className="w-4 h-4 text-red-700 animate-pulse" />
-            <span>{highPriorityToast}</span>
+      {/* Realtime Alert for Incoming Severity 4-5 Hazards */}
+      {latestAlert && (
+        <div className="p-3.5 bg-red-900/10 border border-red-900/30 rounded-2xl flex items-center justify-between text-xs text-red-900 shadow-xs">
+          <div className="flex items-center gap-2.5 font-bold">
+            <AlertTriangle className="w-4 h-4 text-red-700 animate-pulse shrink-0" />
+            <span>
+              🚨 Realtime Citizen Hazard: {latestAlert.type.toUpperCase()} (Sev {latestAlert.severity}/5) at {latestAlert.ward || "Hyderabad"} ({latestAlert.tracking_id})
+            </span>
           </div>
           <button
-            onClick={clearUnreadAlerts}
-            className="text-[11px] underline font-semibold cursor-pointer"
+            onClick={clearAlert}
+            className="text-xs font-bold underline cursor-pointer px-2 py-1 hover:opacity-80"
           >
-            Dismiss
+            Acknowledge
           </button>
+        </div>
+      )}
+
+      {/* Backend not configured banner */}
+      {!isConfigured && (
+        <div className="bg-amber-100/90 border border-amber-300 text-amber-900 rounded-2xl p-3.5 text-xs flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+          <span>
+            <strong>Backend not configured:</strong> Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in <code>.env.local</code> to enable live Realtime dispatch from citizen devices.
+          </span>
         </div>
       )}
 
@@ -271,8 +291,9 @@ export default function AdminWardPortalPage() {
           <div className="relative">
             <button
               type="button"
-              onClick={clearUnreadAlerts}
+              onClick={clearAlert}
               className="p-2 rounded-xl bg-white border border-[#3E000C]/15 text-[#3E000C] hover:bg-[#3E000C]/5 transition-all shadow-2xs cursor-pointer relative"
+              title="Notifications"
             >
               <Bell className="w-4 h-4" />
               {unreadAlertCount > 0 && (
@@ -353,8 +374,8 @@ export default function AdminWardPortalPage() {
 
           <div className="space-y-3">
             {prioritySortedIssues.map((issue) => {
-              const isOverdue = issue.slaMinutesRemaining < 0 && issue.status !== "Resolved";
-              const isResolved = issue.status === "Resolved";
+              const isResolved = issue.status === "resolved";
+              const isOverdue = !isResolved && (Date.now() - new Date(issue.created_at).getTime() > 4 * 3600 * 1000);
 
               return (
                 <div
@@ -371,32 +392,33 @@ export default function AdminWardPortalPage() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded bg-[#3E000C]/8 border border-[#3E000C]/12">
-                          {issue.trackingId}
+                          {issue.tracking_id}
                         </span>
                         <span className="text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded-full bg-[#3E000C] text-[#FFECD1]">
                           Sev {issue.severity}/5
                         </span>
-                        {issue.isClustered && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-600/15 text-amber-900 border border-amber-600/25 flex items-center gap-1">
-                            <Layers className="w-3 h-3" />
-                            <span>Clustered ({issue.confirmationsCount} Citizen Confirmations)</span>
-                          </span>
-                        )}
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#3E000C]/8 text-[#3E000C]">
+                          {issue.type}
+                        </span>
                         <span className="text-[10px] text-[#3E000C]/60 font-medium">
-                          {issue.location.ward}
+                          {issue.ward || "Hyderabad Central"}
                         </span>
                       </div>
-                      <h3 className="font-bold text-sm text-[#3E000C]">{issue.title}</h3>
-                      <p className="text-xs text-[#3E000C]/75">{issue.location.address}</p>
+                      <h3 className="font-bold text-sm text-[#3E000C]">
+                        {issue.description || `${issue.type} reported on ${issue.ward}`}
+                      </h3>
+                      {issue.ai_summary && (
+                        <p className="text-xs text-[#3E000C]/75">{issue.ai_summary}</p>
+                      )}
                     </div>
 
                     <div className="sm:text-right shrink-0">
                       <div className="text-xs font-semibold text-[#3E000C]/60">Exposure Index</div>
                       <div className="text-xl font-black text-[#3E000C]">
-                        {issue.priorityScore} <span className="text-xs font-normal">pts</span>
+                        {Math.round((issue.severity * 3500) / 100)} <span className="text-xs font-normal">pts</span>
                       </div>
                       <div className="text-[10px] text-[#3E000C]/65 font-mono">
-                        ({issue.severity} × {issue.exposureCount}) / 100
+                        ({issue.severity} × 3,500) / 100
                       </div>
                     </div>
                   </div>
@@ -405,27 +427,23 @@ export default function AdminWardPortalPage() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-2 px-3 rounded-xl bg-[#FFECD1]/25 border border-[#3E000C]/10 text-xs">
                     <div>
                       <span className="text-[10px] text-[#3E000C]/60 block font-semibold">{t("exposureCount")}:</span>
-                      <span className="font-bold text-[#3E000C]">{issue.exposureCount.toLocaleString()}</span>
+                      <span className="font-bold text-[#3E000C]">3,500 commuters</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-[#3E000C]/60 block font-semibold">{t("slaTimer")}:</span>
-                      <span
-                        className={`font-bold ${
-                          isOverdue ? "text-red-700" : isResolved ? "text-emerald-700" : "text-[#3E000C]"
-                        }`}
-                      >
-                        {issue.slaFormatted}
+                      <span className="text-[10px] text-[#3E000C]/60 block font-semibold">Source:</span>
+                      <span className="font-bold text-[#3E000C] uppercase text-[10px]">
+                        {issue.severity_source}
                       </span>
                     </div>
                     <div>
                       <span className="text-[10px] text-[#3E000C]/60 block font-semibold">Status:</span>
-                      <span className="font-bold text-[#3E000C]">{issue.status}</span>
+                      <span className="font-bold text-[#3E000C] capitalize">{issue.status.replace("_", " ")}</span>
                     </div>
                   </div>
 
                   {/* Actions: Dispatch or AI Before/After Verification */}
                   <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#3E000C]/10">
-                    {issue.status === "Pending" && (
+                    {issue.status === "reported" && (
                       <Button
                         variant="primary"
                         size="sm"
@@ -437,7 +455,7 @@ export default function AdminWardPortalPage() {
                       </Button>
                     )}
 
-                    {issue.status === "In Progress" && (
+                    {(issue.status === "dispatched" || issue.status === "in_progress") && (
                       <Button
                         variant="primary"
                         size="sm"
@@ -448,7 +466,7 @@ export default function AdminWardPortalPage() {
                       </Button>
                     )}
 
-                    {issue.status === "Resolved" && (
+                    {issue.status === "resolved" && (
                       <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-emerald-100 border border-emerald-300">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>{t("fixNeutralized")}</span>
@@ -515,7 +533,7 @@ export default function AdminWardPortalPage() {
                   </span>
                   <div className="h-32 rounded-xl overflow-hidden border border-[#3E000C]/15 bg-black/5">
                     <img
-                      src={verifyingIssue.beforePhoto}
+                      src={verifyingIssue.photo_url}
                       alt="Before"
                       className="w-full h-full object-cover"
                     />

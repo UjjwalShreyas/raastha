@@ -1,72 +1,141 @@
--- =========================================================================
--- RAASTHA CIVIC SAFETY PLATFORM - SUPABASE DATABASE SCHEMA
--- Run this in your Supabase SQL Editor: https://supabase.com/dashboard/project/_/sql
--- =========================================================================
+-- ==============================================================================
+-- Raastha Civic Safety Platform - Supabase Database Schema & Storage Setup
+-- ==============================================================================
 
--- 1. Create reports table
-CREATE TABLE IF NOT EXISTS reports (
-  id TEXT PRIMARY KEY,
-  tracking_id TEXT NOT NULL UNIQUE,
-  title TEXT NOT NULL,
-  type TEXT NOT NULL,
-  severity INT NOT NULL CHECK (severity BETWEEN 1 AND 5),
-  exposure_count INT NOT NULL DEFAULT 3000,
-  priority_score INT NOT NULL,
-  lat DOUBLE PRECISION NOT NULL,
-  lng DOUBLE PRECISION NOT NULL,
-  address TEXT NOT NULL,
-  ward TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'In Progress', 'Resolved')),
-  before_photo TEXT NOT NULL,
-  after_photo TEXT,
-  ai_classification JSONB,
-  clarifications JSONB,
-  resolution_notes TEXT,
-  confirmations_count INT NOT NULL DEFAULT 1,
-  is_clustered BOOLEAN NOT NULL DEFAULT false,
-  assigned_officer TEXT,
-  sla_minutes INT NOT NULL DEFAULT 240,
-  reported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- 1. EXTENSIONS
+create extension if not exists "uuid-ossp";
+create extension if not exists pgcrypto;
+
+-- 2. HELPER FUNCTION: Generate 8-character uppercase random tracking ID
+create or replace function generate_tracking_id()
+returns text as $$
+declare
+  chars text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  result text := 'RST-';
+  i integer;
+begin
+  for i in 1..8 loop
+    result := result || substr(chars, floor(random() * length(chars) + 1)::integer, 1);
+  end loop;
+  return result;
+end;
+$$ language plpgsql volatile;
+
+-- 3. HELPER FUNCTION & TRIGGER: Auto-update updated_at timestamp
+create or replace function update_updated_at_column()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+-- 4. TABLE: issues
+create table if not exists public.issues (
+  id uuid primary key default gen_random_uuid(),
+  tracking_id text unique not null default generate_tracking_id(),
+  type text not null check (type in ('pothole', 'streetlight', 'garbage', 'waterlogging', 'other')),
+  severity int not null check (severity between 1 and 5),
+  severity_source text not null check (severity_source in ('ai', 'manual')),
+  description text,
+  lat double precision not null,
+  lng double precision not null,
+  ward text,
+  photo_url text not null,
+  after_photo_url text,
+  ai_summary text,
+  status text not null default 'reported' check (status in ('reported', 'dispatched', 'in_progress', 'resolved', 'rejected')),
+  created_at timestamp with time zone default now() not null,
+  updated_at timestamp with time zone default now() not null
 );
 
--- 2. Create status_events table for audit trail
-CREATE TABLE IF NOT EXISTS status_events (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
-  old_status TEXT,
-  new_status TEXT NOT NULL,
-  event_by TEXT NOT NULL,
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- Trigger for updated_at on issues
+drop trigger if exists set_issues_updated_at on public.issues;
+create trigger set_issues_updated_at
+before update on public.issues
+for each row
+execute function update_updated_at_column();
+
+-- 5. TABLE: status_events (Audit Trail)
+create table if not exists public.status_events (
+  id uuid primary key default gen_random_uuid(),
+  issue_id uuid not null references public.issues(id) on delete cascade,
+  status text not null,
+  note text,
+  created_at timestamp with time zone default now() not null
 );
 
--- 3. Create route_requests table for real commuter exposure calculation
-CREATE TABLE IF NOT EXISTS route_requests (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  start_lat DOUBLE PRECISION NOT NULL,
-  start_lng DOUBLE PRECISION NOT NULL,
-  dest_name TEXT NOT NULL,
-  dest_lat DOUBLE PRECISION NOT NULL,
-  dest_lng DOUBLE PRECISION NOT NULL,
-  chosen_route_id TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Create helpful indexes for performance
+create index if not exists idx_issues_status on public.issues(status);
+create index if not exists idx_issues_created_at on public.issues(created_at desc);
+create index if not exists idx_issues_tracking_id on public.issues(tracking_id);
+create index if not exists idx_status_events_issue_id on public.status_events(issue_id);
 
--- 4. Enable Row Level Security (RLS) & Public Policies for Demo
-ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE status_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE route_requests ENABLE ROW LEVEL SECURITY;
+-- 6. REALTIME: Enable Supabase Realtime for live cross-device incident updates
+alter publication supabase_realtime add table public.issues;
+alter publication supabase_realtime add table public.status_events;
 
-CREATE POLICY "Allow public read access to reports" ON reports FOR SELECT USING (true);
-CREATE POLICY "Allow public insert to reports" ON reports FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update to reports" ON reports FOR UPDATE USING (true);
+-- 7. ROW LEVEL SECURITY (RLS) POLICIES
+alter table public.issues enable row level security;
+alter table public.status_events enable row level security;
 
-CREATE POLICY "Allow public read to status_events" ON status_events FOR SELECT USING (true);
-CREATE POLICY "Allow public insert to status_events" ON status_events FOR INSERT WITH CHECK (true);
+-- Policy: Anyone (citizens, officers, guests) can view issues
+create policy "Anyone can select issues"
+  on public.issues
+  for select
+  using (true);
 
-CREATE POLICY "Allow public read to route_requests" ON route_requests FOR SELECT USING (true);
-CREATE POLICY "Allow public insert to route_requests" ON route_requests FOR INSERT WITH CHECK (true);
+-- Policy: Anyone can report an issue, but only with initial status 'reported'
+create policy "Anyone can insert reported issues"
+  on public.issues
+  for insert
+  with check (status = 'reported');
 
--- 5. Enable Supabase Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE reports;
+-- DEMO POLICY (Civic Hackathon Mode):
+-- Allows anonymous updates so demonstration dispatch & AI fix verification
+-- can be tested directly from the admin dashboard without configuring full Supabase Auth.
+create policy "DEMO: Anyone can update issues for hackathon testing"
+  on public.issues
+  for update
+  using (true)
+  with check (true);
+
+-- PRODUCTION POLICY (Commented out for hackathon demo):
+-- In strict production deployment, only authenticated GHMC officers can update status:
+/*
+create policy "Officers can update issues in production"
+  on public.issues
+  for update
+  to authenticated
+  using (true)
+  with check (true);
+*/
+
+-- Status Events RLS
+create policy "Anyone can select status events"
+  on public.status_events
+  for select
+  using (true);
+
+create policy "Anyone can insert status events"
+  on public.status_events
+  for insert
+  with check (true);
+
+-- 8. STORAGE BUCKET: issue-photos
+-- Insert bucket record if it doesn't already exist
+insert into storage.buckets (id, name, public)
+values ('issue-photos', 'issue-photos', true)
+on conflict (id) do update set public = true;
+
+-- Storage Policy: Anyone can view issue photos
+create policy "Public can view issue photos"
+  on storage.objects
+  for select
+  using (bucket_id = 'issue-photos');
+
+-- Storage Policy: Anyone can upload photos to issue-photos
+create policy "Public can upload issue photos"
+  on storage.objects
+  for insert
+  with check (bucket_id = 'issue-photos');

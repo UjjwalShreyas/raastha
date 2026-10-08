@@ -8,23 +8,23 @@ import {
   Users,
   TrendingUp,
 } from "lucide-react";
-import { useApp } from "@/context/AppContext";
+import { useIssues } from "@/context/IssuesContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { MOCK_BASE_COORDINATES, MOCK_ROUTES } from "@/lib/mockData";
 import { Button } from "@/components/ui/Button";
 
 export default function OverviewPage() {
-  const { issues } = useApp();
+  const { issues } = useIssues();
   const [activeTab, setActiveTab] = useState<"overview" | "hazards" | "corridor">("overview");
 
   const mapMarkers = issues.map((iss) => ({
     id: iss.id,
-    lat: iss.location.lat,
-    lng: iss.location.lng,
-    title: iss.title,
+    lat: iss.lat,
+    lng: iss.lng,
+    title: iss.description || `${iss.type} on ${iss.ward}`,
     type: iss.type,
     severity: iss.severity,
-    description: `${iss.exposureCount} commuters affected daily. Priority: ${iss.priorityScore}`,
+    description: `Tracking: ${iss.tracking_id} | Status: ${iss.status}`,
   }));
 
   const mapPolylines = [
@@ -44,7 +44,7 @@ export default function OverviewPage() {
   ];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8 font-sans">
       {/* Overview Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#3E000C]/12 pb-5">
         <div>
@@ -56,7 +56,7 @@ export default function OverviewPage() {
             Ward Safety Radar & Live Overview
           </h1>
           <p className="text-[#3E000C]/65 text-xs mt-1 font-normal">
-            Real-time hazard markers, community reports and illuminated safe corridors around Koramangala
+            Real-time hazard markers, community reports and illuminated safe corridors around Hyderabad IT Corridor
           </p>
         </div>
 
@@ -145,9 +145,9 @@ export default function OverviewPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="font-mono text-[10px] text-[#3E000C]/60 block">{issue.trackingId}</span>
+                    <span className="font-mono text-[10px] text-[#3E000C]/60 block">{issue.tracking_id}</span>
                     <h4 className="text-xs font-bold text-[#3E000C] line-clamp-1">
-                      {issue.title}
+                      {issue.description || `${issue.type} on ${issue.ward || "Road"}`}
                     </h4>
                   </div>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#3E000C]/8 text-[#3E000C] shrink-0 border border-[#3E000C]/15">
@@ -158,11 +158,11 @@ export default function OverviewPage() {
                 <div className="flex items-center justify-between text-[11px] text-[#3E000C]/65 pt-1 border-t border-[#3E000C]/8">
                   <span className="flex items-center gap-1">
                     <Users className="w-3 h-3 text-[#3E000C]/60" />
-                    {issue.exposureCount} Commuters
+                    3,500 Commuters
                   </span>
-                  <span className="flex items-center gap-1 text-[#3E000C] font-semibold">
+                  <span className="flex items-center gap-1 text-[#3E000C] font-semibold capitalize">
                     <Clock className="w-3 h-3" />
-                    {issue.slaFormatted}
+                    {issue.status.replace("_", " ")}
                   </span>
                 </div>
               </div>

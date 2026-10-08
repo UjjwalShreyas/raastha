@@ -15,10 +15,12 @@ import {
   Send,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { useLocation } from "@/context/LocationContext";
 
 export default function Home() {
-  const { language, setLanguage, voice, triggerSOS, t, locationError } = useApp();
-  const [typedInput, setTypedInput] = useState<string>(" ");
+  const { language, setLanguage, voice, triggerSOS, t } = useApp();
+  const { error: locationError } = useLocation();
+  const [typedInput, setTypedInput] = useState<string>("");
   const [isTypingFallbackOpen, setIsTypingFallbackOpen] = useState<boolean>(false);
 
   const handleVoiceToggle = () => {

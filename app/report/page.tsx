@@ -20,14 +20,15 @@ import {
   Info,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { useIssues, IssueType } from "@/context/IssuesContext";
+import { useLocation } from "@/context/LocationContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { Button } from "@/components/ui/Button";
-import { HazardIssue } from "@/lib/mockData";
 import { HazardAnalysisResult } from "@/app/api/analyze-hazard/route";
 
 // Self-contained embedded SVG images for presets (Zero CORS issues, Hyderabad themes)
 const PRESET_IMAGES: {
-  type: HazardIssue["type"];
+  type: "Pothole" | "Broken Streetlight" | "Waterlogging" | "Open Manhole";
   title: string;
   dataUrl: string;
 }[] = [
@@ -134,7 +135,9 @@ function compressImageToDataUrl(file: File): Promise<string> {
 
 export default function ReportWizardPage() {
   const router = useRouter();
-  const { language, voice, setVoiceMode, addReportedIssue, coordinates, t } = useApp();
+  const { language, voice, setVoiceMode, t } = useApp();
+  const { addReportedIssue, isConfigured } = useIssues();
+  const { coordinates, requestLocation, isReal } = useLocation();
 
   // Set dictation mode on mount to avoid VoiceBar keyword interference, restore on unmount
   useEffect(() => {
@@ -146,14 +149,16 @@ export default function ReportWizardPage() {
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [isScanningPhoto, setIsScanningPhoto] = useState<boolean>(false);
   const [aiAnalysis, setAiAnalysis] = useState<HazardAnalysisResult | null>(null);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [isAiApplied, setIsAiApplied] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Form parameters (with manual override capability)
   const [isManualOverride, setIsManualOverride] = useState<boolean>(false);
-  const [hazardType, setHazardType] = useState<HazardIssue["type"]>("Pothole");
+  const [hazardType, setHazardType] = useState<string>("Pothole");
   const [title, setTitle] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [severity, setSeverity] = useState<1 | 2 | 3 | 4 | 5>(4);
@@ -232,6 +237,7 @@ export default function ReportWizardPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setPhotoFile(file);
     const compressedBase64 = await compressImageToDataUrl(file);
     setPhotoUrl(compressedBase64);
     await analyzeImageWithAi(compressedBase64, "image/jpeg");
@@ -254,6 +260,17 @@ export default function ReportWizardPage() {
         if (ctx) {
           ctx.drawImage(img, 0, 0);
           const pngBase64 = canvas.toDataURL("image/png");
+          
+          // Create synthetic File from blob for database upload
+          canvas.toBlob(async (blob) => {
+            if (blob) {
+              const file = new File([blob], `${preset.type.toLowerCase()}-demo.png`, {
+                type: "image/png",
+              });
+              setPhotoFile(file);
+            }
+          }, "image/png");
+
           await analyzeImageWithAi(pngBase64, "image/png");
         } else {
           setIsScanningPhoto(false);
@@ -277,51 +294,42 @@ export default function ReportWizardPage() {
   const priorityScore = Math.round((severity * exposureCount) / 100);
 
   const handleSubmitReport = async () => {
-    if (!photoUrl) {
-      alert("Please upload or snap a photo of the hazard first.");
+    if (!photoFile) {
+      alert("A genuine photo of the hazard is strictly required before submitting.");
       return;
     }
 
-    // Generate collision-resistant tracking ID
-    const trackingId = `GHMC-${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(65 + Math.floor(Math.random() * 26))}`;
+    setIsSubmitting(true);
 
-    const newIssue: HazardIssue = {
-      id: `iss-${Date.now()}`,
-      trackingId,
-      title: title || `${hazardType} reported by Citizen`,
-      type: hazardType,
-      severity,
-      exposureCount,
-      priorityScore,
-      location: {
+    try {
+      let mappedType: IssueType = "pothole";
+      const ht = hazardType.toLowerCase();
+      if (ht.includes("light") || ht.includes("lamp")) mappedType = "streetlight";
+      else if (ht.includes("garbage") || ht.includes("debris")) mappedType = "garbage";
+      else if (ht.includes("water")) mappedType = "waterlogging";
+      else if (!ht.includes("pothole")) mappedType = "other";
+
+      const createdRow = await addReportedIssue({
+        type: mappedType,
+        severity,
+        severitySource: isManualOverride ? "manual" : "ai",
+        description: description || title || `${hazardType} reported on ${ward}`,
         lat: coordinates.lat,
         lng: coordinates.lng,
-        address: `${ward}`,
         ward,
-      },
-      reportedAt: "Just now",
-      slaMinutesRemaining: aiAnalysis?.recommendedSlaHours ? aiAnalysis.recommendedSlaHours * 60 : 240,
-      slaFormatted: aiAnalysis?.recommendedSlaHours ? `${aiAnalysis.recommendedSlaHours}h 00m left` : "4h 00m left",
-      status: "Pending",
-      beforePhoto: photoUrl,
-      aiClassification: {
-        detectedObject: aiAnalysis?.detectedObject || `${hazardType} (Manual Inspection)`,
-        confidence: aiAnalysis?.confidence || (isManualOverride ? 100 : 90),
-        hazardIndex: aiAnalysis?.hazardIndex || (severity >= 4 ? "Severe Roadway Hazard" : severity === 3 ? "Moderate Road Defect" : "Superficial Wear"),
-        impactDescription: description || aiAnalysis?.impactDescription || `Commuters affected proxy: ${exposureCount}`,
-      },
-      clarifications,
-    };
+        photo: photoFile,
+        aiSummary: aiAnalysis ? `${aiAnalysis.hazardIndex} (${aiAnalysis.detectedObject})` : undefined,
+      });
 
-    const res = await addReportedIssue(newIssue);
-    const successMsg = `${t("reportSuccess")} ${trackingId}`;
-    voice.speak(successMsg, language);
+      const successMsg = `${t("reportSuccess")} ${createdRow.tracking_id}`;
+      voice.speak(successMsg, language);
 
-    if (res.wasClustered) {
-      alert(`Notice: Your report matched an active hazard within 30 meters and was clustered to raise municipal priority.`);
+      router.push("/my-reports");
+    } catch (err: any) {
+      alert(`Submission error: ${err.message || "Failed to submit report"}`);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    router.push("/my-reports");
   };
 
   return (
@@ -356,6 +364,16 @@ export default function ReportWizardPage() {
           ))}
         </div>
       </div>
+
+      {/* Backend not configured banner */}
+      {!isConfigured && (
+        <div className="bg-amber-100/90 border border-amber-300 text-amber-900 rounded-2xl p-3.5 text-xs flex items-center gap-2.5">
+          <Info className="w-4 h-4 shrink-0 text-amber-700" />
+          <span>
+            <strong>Backend not configured:</strong> Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in <code>.env.local</code> to enable live cross-device sync.
+          </span>
+        </div>
+      )}
 
       {/* Step Content */}
       <AnimatePresence mode="wait">
@@ -712,7 +730,7 @@ export default function ReportWizardPage() {
                   <button
                     key={typeStr}
                     type="button"
-                    onClick={() => setHazardType(typeStr as HazardIssue["type"])}
+                    onClick={() => setHazardType(typeStr)}
                     className={`p-2.5 rounded-xl text-xs font-medium border transition-colors text-left cursor-pointer ${
                       hazardType === typeStr
                         ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] font-semibold"
