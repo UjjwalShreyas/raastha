@@ -25,7 +25,18 @@ export default function RootLayout({
       lang="en"
       className="h-full antialiased"
     >
-      <body className="min-h-full flex flex-col bg-[#FFECD1] text-[#3E000C] font-[Inter,system-ui,Arial,sans-serif] selection:bg-[#3E000C] selection:text-[#FFECD1]">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..900&family=Space+Grotesk:wght@500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body
+        className="min-h-full flex flex-col text-[#3E000C] selection:bg-[#3E000C] selection:text-[#FFECD1]"
+        style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
+      >
         <AuthProvider>
           <LocationProvider>
             <IssuesProvider>

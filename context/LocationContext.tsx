@@ -18,7 +18,9 @@ export interface LocationContextType {
   isReal: boolean;
   accuracy: number | null;
   error: string | null;
+  formattedAddress: string;
   requestLocation: () => Promise<LocationCoordinates>;
+  setCustomCoordinates: (coords: LocationCoordinates) => void;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
@@ -32,13 +34,13 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [isReal, setIsReal] = useState<boolean>(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formattedAddress, setFormattedAddress] = useState<string>("Hyderabad Central Zone");
 
-  // Request location ONLY when a feature explicitly needs it (not on page mount)
   const requestLocation = useCallback((): Promise<LocationCoordinates> => {
     return new Promise((resolve) => {
       if (typeof window === "undefined" || !("geolocation" in navigator)) {
         setStatus("unsupported");
-        setError("Geolocation is not supported by your browser. Using Hyderabad city center.");
+        setError("Geolocation is not supported by your browser. Using fallback coordinates.");
         setIsReal(false);
         resolve({
           lat: HYDERABAD_FALLBACK_COORDINATES[0],
@@ -53,27 +55,28 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const coords = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
+            lat: Number(pos.coords.latitude.toFixed(6)),
+            lng: Number(pos.coords.longitude.toFixed(6)),
           };
           setCoordinates(coords);
-          setAccuracy(pos.coords.accuracy || 10);
+          setAccuracy(Math.round(pos.coords.accuracy || 15));
           setStatus("granted");
           setIsReal(true);
+          setFormattedAddress(`${coords.lat}° N, ${coords.lng}° E (Live GPS)`);
           resolve(coords);
         },
         (err) => {
           console.warn("GPS access notice:", err.message);
           setStatus("denied");
-          setError("GPS access was denied or timed out. Using Hyderabad corridor coordinates.");
+          setError("GPS access was denied or timed out. Defaulting to Central Corridor coordinates.");
           setIsReal(false);
-          // Fallback to Hyderabad
           const fallback = {
             lat: HYDERABAD_FALLBACK_COORDINATES[0],
             lng: HYDERABAD_FALLBACK_COORDINATES[1],
           };
           setCoordinates(fallback);
           setAccuracy(null);
+          setFormattedAddress("Hyderabad Central Corridor (Default)");
           resolve(fallback);
         },
         {
@@ -85,6 +88,19 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Ask for user location immediately while accessing the app
+  React.useEffect(() => {
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
+      requestLocation();
+    }
+  }, [requestLocation]);
+
+  const setCustomCoordinates = useCallback((coords: LocationCoordinates) => {
+    setCoordinates(coords);
+    setIsReal(true);
+    setFormattedAddress(`${coords.lat.toFixed(5)}° N, ${coords.lng.toFixed(5)}° E (Pinned Location)`);
+  }, []);
+
   return (
     <LocationContext.Provider
       value={{
@@ -93,7 +109,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         isReal,
         accuracy,
         error,
+        formattedAddress,
         requestLocation,
+        setCustomCoordinates,
       }}
     >
       {children}

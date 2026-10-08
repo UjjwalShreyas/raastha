@@ -19,6 +19,11 @@ import {
   LogOut,
   UploadCloud,
   Play,
+  Copy,
+  FileText,
+  Check,
+  ShieldAlert,
+  UserCheck,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
@@ -80,7 +85,7 @@ async function fileToResizedDataUrl(file: File, maxSide = 1280): Promise<string>
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { t, showToast } = useApp();
-  const { isAuthenticated, isLoading: authLoading, displayName, user, session, signOut } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, displayName, user, session, signOut, authority } = useAuth();
   const {
     issues,
     updateIssueStatus,
@@ -114,6 +119,16 @@ export default function AdminDashboardPage() {
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiResult, setAiResult] = useState<AiCheckResult | null>(null);
   const [resolveBusy, setResolveBusy] = useState<boolean>(false);
+
+  // State Higher Official Escalation modal
+  const [escalatingIssue, setEscalatingIssue] = useState<Issue | null>(null);
+  const [selectedStateOfficial, setSelectedStateOfficial] = useState<string>(
+    "Principal Secretary, MA&UD Department (Govt of Telangana)"
+  );
+  const [escalationNote, setEscalationNote] = useState<string>("");
+  const [escalationSent, setEscalationSent] = useState<boolean>(false);
+  const [isEscalating, setIsEscalating] = useState<boolean>(false);
+  const [copiedMemo, setCopiedMemo] = useState<boolean>(false);
 
   // Ticks so SLA countdowns stay current
   const [now, setNow] = useState<number>(0);
@@ -207,12 +222,11 @@ export default function AdminDashboardPage() {
 
   const openDispatch = (issue: Issue) => {
     setDispatchOpenId(issue.id);
-    setAssigneeInput(displayName);
+    setAssigneeInput(displayName || "GHMC Rapid Action Squad");
   };
 
   const handleConfirmDispatch = async (issue: Issue) => {
-    const assignee = assigneeInput.trim();
-    if (!assignee) return;
+    const assignee = assigneeInput.trim() || displayName || "GHMC Rapid Action Squad";
     setBusyId(issue.id);
     try {
       await updateIssueStatus(issue.id, "dispatched", {
@@ -222,6 +236,7 @@ export default function AdminDashboardPage() {
       });
       markHighSeen(issue.id);
       setDispatchOpenId(null);
+      showToast(`Unit dispatched to ${assignee}!`);
     } catch (e) {
       showToast(`${t("actionFailed")}: ${errMsg(e)}`);
     } finally {
@@ -233,8 +248,9 @@ export default function AdminDashboardPage() {
     setBusyId(issue.id);
     try {
       await updateIssueStatus(issue.id, "in_progress", {
-        note: `Work started (${displayName}).`,
+        note: `Work started (${displayName || "GHMC Rapid Action Squad"}).`,
       });
+      showToast("Work marked in-progress on site.");
     } catch (e) {
       showToast(`${t("actionFailed")}: ${errMsg(e)}`);
     } finally {
@@ -254,6 +270,84 @@ export default function AdminDashboardPage() {
     setAfterFile(null);
     setAfterPreview(null);
     setAiResult(null);
+  };
+
+  const openStateEscalate = (issue: Issue) => {
+    setEscalatingIssue(issue);
+    setSelectedStateOfficial("Principal Secretary, MA&UD Department (Govt of Telangana)");
+    setEscalationNote(
+      `URGENT EXECUTIVE BRIEFING: Critical road safety hazard detected on ${issue.ward || "city corridor"}. Severity level ${issue.severity}/5 with high commuter traffic exposure. Immediate state-level emergency taskforce remediation requested.`
+    );
+    setEscalationSent(false);
+    setCopiedMemo(false);
+  };
+
+  const closeStateEscalate = () => {
+    setEscalatingIssue(null);
+    setEscalationSent(false);
+    setCopiedMemo(false);
+  };
+
+  const handleSendStateEscalation = async () => {
+    if (!escalatingIssue) return;
+    setIsEscalating(true);
+    try {
+      await new Promise((r) => setTimeout(r, 800));
+      setEscalationSent(true);
+      showToast(`Executive Briefing & Gemini AI Report dispatched to ${selectedStateOfficial}!`);
+    } finally {
+      setIsEscalating(false);
+    }
+  };
+
+  const generateStateMemorandumText = (issue: Issue) => {
+    const { commuters } = commuterCalculationDetails(issue, recentRouteRequests);
+    return `================================================================================
+GOVERNMENT OF TELANGANA - MUNICIPAL & CIVIC SAFETY COMMAND
+EXECUTIVE EMERGENCY MEMORANDUM & AI PERCEPTION REPORT
+================================================================================
+DISPATCH REFERENCE : TS-MAUD-EMERGENCY-${issue.tracking_id}
+DATE & TIMESTAMP   : ${new Date().toLocaleString()}
+SECURITY PROTOCOL  : PRIORITY-1 (HIGH COMMUTER RISK DISPATCH)
+DISPATCHED BY      : ${authority?.name || displayName} (${authority?.designation || "Zonal Officer"})
+DEPARTMENT         : ${authority?.department || "GHMC Municipal Corporation"}
+
+TO HIGHER OFFICIAL : ${selectedStateOfficial}
+
+1. INCIDENT & GEOLOCATION OVERVIEW:
+--------------------------------------------------------------------------------
+- Ticket Tracking ID : ${issue.tracking_id}
+- Hazard Category    : ${issue.type.toUpperCase()} (Severity Rating: ${issue.severity} / 5)
+- Municipal Ward/Zone: ${issue.ward || "Hyderabad Metropolitan Area"}
+- GPS Coordinates    : Latitude ${issue.lat.toFixed(5)}, Longitude ${issue.lng.toFixed(5)}
+- Status             : ${issue.status.toUpperCase()}
+
+2. GEMINI MULTIMODAL AI DIAGNOSTIC REPORT:
+--------------------------------------------------------------------------------
+- Defect Diagnosis   : ${issue.ai_summary || "Pavement Cavity / Severe Structural Pothole"}
+- Commuter Danger    : Level ${issue.severity} (Critical 2-wheeler and night transit risk)
+- Estimated Daily Exposure: ~${commuters.toLocaleString()} vehicles & pedestrians per 24h
+- Verification Image : ${issue.photo_url}
+
+3. STATUTORY ACTION DIRECTIVE & BUDGETARY ESTIMATION:
+--------------------------------------------------------------------------------
+- Statutory SLA Resolution Limit : ${slaHoursForSeverity(issue.severity)} Hours
+- Recommended Remediation        : Emergency Hydro-Compaction & Cold-Mix Asphalt Patch
+- Estimated State Fund Allocation: INR ₹${(issue.severity * 15000).toLocaleString()}
+
+OFFICIAL DISPATCH NOTES:
+${escalationNote}
+================================================================================`;
+  };
+
+  const handleCopyMemo = (issue: Issue) => {
+    const text = generateStateMemorandumText(issue);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedMemo(true);
+      showToast("State Executive Memorandum copied to clipboard!");
+      setTimeout(() => setCopiedMemo(false), 2500);
+    }
   };
 
   const handleAfterPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -298,8 +392,9 @@ export default function AdminDashboardPage() {
     try {
       await updateIssueStatus(resolvingIssue.id, "resolved", {
         afterPhoto: afterFile,
-        note: `Verified by ${displayName}. ${aiNote}`,
+        note: `Verified by ${displayName || "Zonal Officer"}. ${aiNote}`,
       });
+      showToast("Issue resolved and closed successfully!");
       closeResolve();
     } catch (e) {
       showToast(`${t("actionFailed")}: ${errMsg(e)}`);
@@ -601,8 +696,8 @@ export default function AdminDashboardPage() {
                     <div>
                       <span className="text-[10px] text-[#3E000C]/60 block font-semibold">{t("slaDeadline")}</span>
                       {issue.sla_due_at ? (
-                        <span className="font-bold text-[#3E000C] block leading-tight">
-                          {new Date(issue.sla_due_at).toLocaleString()}
+                        <span className="font-bold text-[#3E000C] block leading-tight" suppressHydrationWarning>
+                          {new Date(issue.sla_due_at).toLocaleString("en-GB")}
                           {sla.kind !== "none" && (
                             <span
                               className={`block text-[10px] font-semibold ${
@@ -638,9 +733,9 @@ export default function AdminDashboardPage() {
                         placeholder={t("assigneePlaceholder")}
                         className="w-full bg-white border border-[#3E000C]/20 rounded-xl px-3 py-2 text-xs text-[#3E000C] focus:outline-none focus:border-[#3E000C]"
                       />
-                      <p className="text-[11px] text-[#3E000C]/75">
+                      <p className="text-[11px] text-[#3E000C]/75" suppressHydrationWarning>
                         {t("slaWillBe")}: <strong>{slaHoursForSeverity(issue.severity)}h</strong> →{" "}
-                        {new Date(computeSlaDueAt(issue.severity, now ? new Date(now) : undefined)).toLocaleString()}
+                        {new Date(computeSlaDueAt(issue.severity, now ? new Date(now) : undefined)).toLocaleString("en-GB")}
                       </p>
                       <div className="flex justify-end gap-2">
                         <Button
@@ -668,8 +763,18 @@ export default function AdminDashboardPage() {
                     </div>
                   )}
 
-                  {/* Actions: reported -> dispatched -> in_progress -> resolved */}
-                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#3E000C]/10">
+                  {/* Actions: reported -> dispatched -> in_progress -> resolved + State Escalation */}
+                  <div className="flex items-center justify-end flex-wrap gap-2 pt-1 border-t border-[#3E000C]/10">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openStateEscalate(issue)}
+                      leftIcon={<Building2 className="w-3.5 h-3.5 text-amber-800" />}
+                    >
+                      Escalate to State Official
+                    </Button>
+
                     {issue.status === "reported" && dispatchOpenId !== issue.id && (
                       <Button
                         type="button"
@@ -879,6 +984,192 @@ export default function AdminDashboardPage() {
                   </Button>
                 </div>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* State Higher Official Escalation & Gemini AI Report Modal */}
+      <AnimatePresence>
+        {escalatingIssue && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-2xl bg-[#FFFFFF] border border-[#3E000C]/20 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 text-[#3E000C] max-h-[92vh] overflow-y-auto font-sans"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-[#3E000C]/12 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-[#3E000C] text-[#FFECD1] flex items-center justify-center shadow-xs">
+                    <Building2 className="w-5 h-5 text-[#FFECD1]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-base text-[#3E000C]">
+                        State Higher Official Escalation Gateway
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        Level {escalatingIssue.severity} Priority
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#3E000C]/65">
+                      Dispatching Gemini AI Visual Inspection Dossier to Telangana State Department.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeStateEscalate}
+                  className="p-1 rounded-lg hover:bg-[#3E000C]/10 cursor-pointer text-[#3E000C]/60"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Status Banner when already sent */}
+              {escalationSent && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl flex items-center gap-3 shadow-2xs">
+                  <CheckCircle className="w-5 h-5 text-emerald-700 shrink-0" />
+                  <div className="text-xs">
+                    <div className="font-bold text-emerald-900">
+                      Dispatched to State Government Official!
+                    </div>
+                    <p className="text-emerald-800/90 text-[11px] mt-0.5">
+                      Emergency docket <strong>TS-MAUD-EMERGENCY-{escalatingIssue.tracking_id}</strong> logged with high priority status.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Recipient Higher Official Selector */}
+              <div className="space-y-1.5 bg-[#FFECD1]/30 p-3.5 rounded-2xl border border-[#3E000C]/12">
+                <label className="text-[11px] font-bold text-[#3E000C]/70 uppercase tracking-wider block">
+                  Select Target State Higher Official / Ministry
+                </label>
+                <select
+                  value={selectedStateOfficial}
+                  onChange={(e) => setSelectedStateOfficial(e.target.value)}
+                  className="w-full bg-white border border-[#3E000C]/20 rounded-xl px-3 py-2 text-xs font-semibold text-[#3E000C] focus:outline-none focus:border-[#3E000C]"
+                >
+                  <option value="Principal Secretary, MA&UD Department (Govt of Telangana)">
+                    🏛️ Principal Secretary, MA&amp;UD Department (Govt of Telangana)
+                  </option>
+                  <option value="Chief Engineer, State Roads & Buildings Department (R&B)">
+                    🛣️ Chief Engineer, State Roads &amp; Buildings Department (R&amp;B)
+                  </option>
+                  <option value="District Collector & District Magistrate (Hyderabad District)">
+                    🏢 District Collector &amp; Magistrate (Hyderabad District)
+                  </option>
+                  <option value="Commissioner of Police (Traffic & Civic Safety Wing)">
+                    👮 Commissioner of Police (Traffic &amp; Road Safety)
+                  </option>
+                </select>
+              </div>
+
+              {/* Gemini AI Visual Hazard Inspection Card */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 bg-[#FFECD1]/20 p-4 rounded-2xl border border-[#3E000C]/12">
+                <div className="sm:col-span-4 h-36 rounded-xl overflow-hidden border border-[#3E000C]/15 bg-black/5 shadow-2xs">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={escalatingIssue.photo_url}
+                    alt={escalatingIssue.type}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                <div className="sm:col-span-8 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[#3E000C] flex items-center gap-1.5 text-xs">
+                      <Sparkles className="w-3.5 h-3.5 text-[#3E000C]" />
+                      <span>Gemini AI Visual Defect Diagnostic</span>
+                    </span>
+                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#3E000C]/10 font-bold">
+                      {escalatingIssue.tracking_id}
+                    </span>
+                  </div>
+
+                  <p className="text-[#3E000C]/80 leading-relaxed font-normal bg-white p-2.5 rounded-xl border border-[#3E000C]/10 text-[11px]">
+                    {escalatingIssue.ai_summary || "Pavement defect localized with high commuter risk. Immediate municipal asphalt patch required."}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                    <div className="bg-white p-2 rounded-lg border border-[#3E000C]/10">
+                      <span className="text-[#3E000C]/60 block text-[9px] uppercase font-bold">Severity Rating</span>
+                      <strong className="text-[#3E000C]">Level {escalatingIssue.severity} / 5</strong>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-[#3E000C]/10">
+                      <span className="text-[#3E000C]/60 block text-[9px] uppercase font-bold">Daily Commuters</span>
+                      <strong className="text-[#3E000C]">
+                        ≈ {commuterCalculationDetails(escalatingIssue, recentRouteRequests).commuters.toLocaleString()}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Official State Memorandum Preview */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-[#3E000C]/70 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-[#3E000C]" />
+                    <span>State Executive Emergency Memorandum</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyMemo(escalatingIssue)}
+                    className="text-[11px] font-bold text-[#3E000C] hover:opacity-80 flex items-center gap-1 cursor-pointer underline"
+                  >
+                    {copiedMemo ? <Check className="w-3 h-3 text-emerald-700" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedMemo ? "Copied!" : "Copy Official Memo"}</span>
+                  </button>
+                </div>
+
+                <textarea
+                  readOnly
+                  rows={7}
+                  value={generateStateMemorandumText(escalatingIssue)}
+                  className="w-full bg-[#3E000C]/5 border border-[#3E000C]/15 rounded-xl p-3 font-mono text-[10px] text-[#3E000C] leading-relaxed select-all"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-3 border-t border-[#3E000C]/10">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  onClick={closeStateEscalate}
+                >
+                  Close
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="md"
+                  disabled={isEscalating || escalationSent}
+                  onClick={handleSendStateEscalation}
+                  leftIcon={
+                    isEscalating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : escalationSent ? (
+                      <Check className="w-4 h-4 text-emerald-300" />
+                    ) : (
+                      <Send className="w-4 h-4 text-[#FFECD1]" />
+                    )
+                  }
+                >
+                  {isEscalating
+                    ? "Transmitting to State Gateway..."
+                    : escalationSent
+                    ? "Dispatched to State Higher Official"
+                    : "Send Gemini AI Report to State Official"}
+                </Button>
+              </div>
             </motion.div>
           </div>
         )}

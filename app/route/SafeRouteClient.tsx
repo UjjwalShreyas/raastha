@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Navigation,
   ShieldCheck,
@@ -18,13 +19,14 @@ import {
   Car,
   Footprints,
   LocateFixed,
+  Mic,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useIssues } from "@/context/IssuesContext";
 import { useLocation } from "@/context/LocationContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { Button } from "@/components/ui/Button";
-import { speak } from "@/hooks/useSpeech";
+import { speak, useRecognition } from "@/hooks/useSpeech";
 import { rankAndRecommendRoutes, RankedRoute, RouteCandidate } from "@/lib/safety";
 
 interface DestinationItem {
@@ -37,16 +39,22 @@ interface DestinationItem {
 // Popular Hyderabad civic landmarks for instant 1-click exploration
 const QUICK_HYDERABAD_DESTINATIONS: DestinationItem[] = [
   {
-    name: "Charminar & Old City",
-    address: "Pathergatti, Hyderabad",
-    lat: 17.3616,
-    lng: 78.4747,
+    name: "New Life Villas, Pedda Amberpet",
+    address: "Sy No. 246, 248 & 249 Pedda Amberpet Municipality, Hyderabad, Telangana 501513",
+    lat: 17.3231,
+    lng: 78.6185,
   },
   {
     name: "Cyber Towers, Hitec City",
     address: "Hitec City Main Road, Madhapur",
     lat: 17.4504,
     lng: 78.3808,
+  },
+  {
+    name: "Charminar & Old City",
+    address: "Pathergatti, Hyderabad",
+    lat: 17.3616,
+    lng: 78.4747,
   },
   {
     name: "Secunderabad Railway Station",
@@ -76,9 +84,11 @@ export default function SafeRouteClient() {
   // Mode: driving or walking
   const [profile, setProfile] = useState<"driving-car" | "foot-walking">("driving-car");
 
-  // Destination selection state
+  const searchParams = useSearchParams();
+
+  // Destination selection state (Default: New Life Villas, Pedda Amberpet)
   const [destination, setDestination] = useState<DestinationItem>(
-    QUICK_HYDERABAD_DESTINATIONS[1] // Default: Cyber Towers
+    QUICK_HYDERABAD_DESTINATIONS[0]
   );
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<DestinationItem[]>([]);
@@ -91,6 +101,7 @@ export default function SafeRouteClient() {
   const [isLoadingRoutes, setIsLoadingRoutes] = useState<boolean>(true);
   const [routingError, setRoutingError] = useState<string | null>(null);
   const [isFallback, setIsFallback] = useState<boolean>(false);
+  const [routeProvider, setRouteProvider] = useState<string>("google_maps");
 
   // Turn-by-turn navigation state
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
@@ -130,6 +141,28 @@ export default function SafeRouteClient() {
     }, 350);
   };
 
+  // Auto-search destination passed via voice command query string (?dest=...)
+  useEffect(() => {
+    if (!searchParams) return;
+    const destQuery = searchParams.get("dest");
+    if (destQuery && destQuery.trim().length >= 2) {
+      handleSearchChange(decodeURIComponent(destQuery.trim()));
+    }
+  }, [searchParams]);
+
+  const voiceSearch = useRecognition(language, {
+    onFinal: (text) => {
+      if (text.trim()) {
+        handleSearchChange(text.trim());
+      }
+    },
+    onInterim: (text) => {
+      if (text.trim()) {
+        setSearchQuery(text);
+      }
+    },
+  });
+
   const handleSelectDestination = (dest: DestinationItem) => {
     setDestination(dest);
     setSearchQuery("");
@@ -137,7 +170,7 @@ export default function SafeRouteClient() {
     setSearchResults([]);
   };
 
-  // Fetch real routes from OpenRouteService server endpoint
+  // Fetch real routes from server endpoint (Google Routes API / ORS)
   const fetchRoutes = useCallback(async () => {
     setIsLoadingRoutes(true);
     setRoutingError(null);
@@ -155,6 +188,10 @@ export default function SafeRouteClient() {
       });
 
       const data = await res.json();
+
+      if (data?.provider) {
+        setRouteProvider(data.provider);
+      }
 
       if (!res.ok || !data.routes || data.routes.length === 0) {
         setRoutingError(data.error || "Could not retrieve route alternatives.");
@@ -275,7 +312,11 @@ export default function SafeRouteClient() {
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#3E000C]/8 border border-[#3E000C]/15 text-[#3E000C] text-xs font-bold mb-1.5">
             <Navigation className="w-3.5 h-3.5" />
-            <span>OpenRouteService Corridor Pathfinding</span>
+            <span>
+              {routeProvider === "google_maps"
+                ? "Google Maps Platform Routes & Safety Index"
+                : "OpenRouteService Corridor Pathfinding"}
+            </span>
           </div>
           <h1 className="text-2xl font-bold text-[#3E000C] tracking-tight">
             {t("navIlluminatedCorridor")}
@@ -399,28 +440,65 @@ export default function SafeRouteClient() {
                 {t("navSelectDestination")}
               </label>
 
-              <div className="relative">
+              <div className="relative flex items-center">
                 <input
                   id="dest-search"
                   type="text"
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder={destination ? destination.name : t("searchDestinationPlaceholder")}
-                  className="w-full bg-white border border-[#3E000C]/20 rounded-xl pl-9 pr-8 py-2 text-xs text-[#3E000C] focus:outline-none focus:border-[#3E000C]"
+                  placeholder={
+                    voiceSearch.listening
+                      ? "Listening for destination..."
+                      : voiceSearch.isProcessing
+                      ? "Transcribing with Vosk..."
+                      : destination
+                      ? destination.name
+                      : t("searchDestinationPlaceholder")
+                  }
+                  className={`w-full bg-white border ${
+                    voiceSearch.listening
+                      ? "border-red-500 ring-2 ring-red-200"
+                      : voiceSearch.isProcessing
+                      ? "border-amber-500 ring-2 ring-amber-200"
+                      : "border-[#3E000C]/20"
+                  } rounded-xl pl-9 pr-16 py-2 text-xs text-[#3E000C] focus:outline-none focus:border-[#3E000C]`}
                 />
                 <Search className="w-4 h-4 text-[#3E000C]/50 absolute left-3 top-2.5" />
-                {searchQuery && (
+                
+                <div className="absolute right-2 flex items-center gap-1">
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setSearchResults([]);
+                      }}
+                      className="p-1 text-[#3E000C]/50 hover:text-[#3E000C] cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
-                      setSearchQuery("");
-                      setSearchResults([]);
+                      if (voiceSearch.listening) {
+                        voiceSearch.stop();
+                      } else {
+                        voiceSearch.start();
+                      }
                     }}
-                    className="absolute right-2.5 top-2.5 p-0.5 text-[#3E000C]/50 hover:text-[#3E000C] cursor-pointer"
+                    title="Speak destination"
+                    className={`p-1.5 rounded-lg cursor-pointer transition-all ${
+                      voiceSearch.listening
+                        ? "bg-red-600 text-white animate-pulse"
+                        : voiceSearch.isProcessing
+                        ? "bg-amber-600 text-white animate-pulse"
+                        : "text-[#3E000C]/60 hover:bg-[#3E000C]/8 hover:text-[#3E000C]"
+                    }`}
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Mic className="w-3.5 h-3.5" />
                   </button>
-                )}
+                </div>
               </div>
 
               {/* Autocomplete dropdown */}

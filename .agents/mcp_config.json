@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "roboflow": {
-      "url": "https://mcp.roboflow.com/mcp",
-      "transport": "http"
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.roboflow.com/mcp"]
     }
   }
 }

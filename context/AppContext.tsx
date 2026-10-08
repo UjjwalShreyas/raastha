@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { TRANSLATIONS } from "@/lib/mockData";
 import { openSosSheet, closeSosSheet } from "@/lib/sosEvents";
+import { requestMicrophonePermission, MicPermissionStatus } from "@/hooks/useSpeech";
 
 export type LanguageCode = "EN" | "HI" | "TE";
 
@@ -30,6 +31,10 @@ export interface AppContextType {
 
   // Network Connectivity
   isOnline: boolean;
+
+  // Microphone / Voice Permission
+  micPermission: MicPermissionStatus;
+  requestVoicePermission: () => Promise<MicPermissionStatus>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -40,6 +45,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Network Connectivity State
   const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  // Microphone Permission State
+  const [micPermission, setMicPermission] = useState<MicPermissionStatus>("idle");
+
+  const requestVoicePermission = useCallback(async (): Promise<MicPermissionStatus> => {
+    const status = await requestMicrophonePermission();
+    setMicPermission(status);
+    return status;
+  }, []);
+
+  // Proactively request microphone / voice permission when entered app
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      requestVoicePermission();
+    }
+  }, [requestVoicePermission]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -109,6 +130,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         triggerSOS,
         dismissSOS,
         isOnline,
+        micPermission,
+        requestVoicePermission,
       }}
     >
       {children}

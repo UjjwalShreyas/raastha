@@ -1,21 +1,28 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2,
   Clock,
   FileText,
   AlertTriangle,
+  Trash2,
+  Loader2,
+  X,
+  AlertCircle,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { useIssues } from "@/context/IssuesContext";
+import { useIssues, Issue } from "@/context/IssuesContext";
+import { Button } from "@/components/ui/Button";
 
 export default function MyReportsPage() {
-  const { t } = useApp();
-  const { issues, isConfigured } = useIssues();
+  const { t, showToast } = useApp();
+  const { issues, isConfigured, deleteIssue } = useIssues();
 
   const [filterStatus, setFilterStatus] = useState<"All" | "reported" | "in_progress" | "resolved">("All");
+  const [confirmDeleteIssue, setConfirmDeleteIssue] = useState<Issue | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const filteredIssues = issues.filter((issue) => {
     if (filterStatus === "All") return true;
@@ -24,6 +31,19 @@ export default function MyReportsPage() {
     }
     return issue.status === filterStatus;
   });
+
+  const handleDelete = async (issue: Issue) => {
+    setIsDeleting(true);
+    try {
+      await deleteIssue(issue.id);
+      showToast(`Report #${issue.tracking_id} deleted successfully`);
+      setConfirmDeleteIssue(null);
+    } catch (err: any) {
+      showToast(`Failed to delete: ${err.message || "Unknown error"}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-8 font-sans">
@@ -113,7 +133,7 @@ export default function MyReportsPage() {
                   </h3>
                 </div>
 
-                {/* Status Badge */}
+                {/* Status Badge & Delete Action */}
                 <div className="flex items-center gap-2 shrink-0">
                   <span
                     className={`px-2.5 py-0.5 rounded-md text-xs font-bold uppercase border ${
@@ -126,6 +146,16 @@ export default function MyReportsPage() {
                   >
                     {issue.status.replace("_", " ")}
                   </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteIssue(issue)}
+                    title="Delete this report"
+                    aria-label={`Delete report ${issue.tracking_id}`}
+                    className="p-1.5 rounded-lg text-[#3E000C]/50 hover:text-red-700 hover:bg-red-50 transition-colors border border-transparent hover:border-red-200 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
@@ -177,8 +207,12 @@ export default function MyReportsPage() {
                   <div className="bg-[#FFECD1]/20 p-3 rounded-xl border border-[#3E000C]/10 space-y-1 text-xs">
                     <div className="flex items-center justify-between text-[#3E000C]">
                       <span className="font-semibold">{issue.ward || "Circle 20 - Serilingampally, Hyderabad"}</span>
-                      <span className="text-[#3E000C]/60 font-mono text-[11px]">
-                        {new Date(issue.created_at).toLocaleDateString()}
+                      <span className="text-[#3E000C]/60 font-mono text-[11px]" suppressHydrationWarning>
+                        {new Date(issue.created_at).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
                       </span>
                     </div>
 
@@ -194,6 +228,75 @@ export default function MyReportsPage() {
           ))
         )}
       </div>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {confirmDeleteIssue && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white border border-[#3E000C]/20 rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5 text-red-700">
+                  <div className="p-2 rounded-xl bg-red-100">
+                    <AlertCircle className="w-5 h-5 text-red-700" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-[#3E000C]">Delete Report</h3>
+                    <p className="text-[11px] text-[#3E000C]/60 font-mono">
+                      #{confirmDeleteIssue.tracking_id}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteIssue(null)}
+                  disabled={isDeleting}
+                  className="p-1 rounded-lg text-[#3E000C]/40 hover:text-[#3E000C] hover:bg-[#3E000C]/8 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-[#3E000C]/80 leading-relaxed">
+                Are you sure you want to delete this hazard report? This ticket will be permanently removed from your active tracking feed.
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#3E000C]/10">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isDeleting}
+                  onClick={() => setConfirmDeleteIssue(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  disabled={isDeleting}
+                  onClick={() => handleDelete(confirmDeleteIssue)}
+                  leftIcon={
+                    isDeleting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )
+                  }
+                >
+                  {isDeleting ? "Deleting..." : "Delete Report"}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

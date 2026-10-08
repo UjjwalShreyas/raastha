@@ -11,7 +11,7 @@ export async function extractIntent(
       isMock: true,
       data: {
         intent: "report_issue",
-        fields: { issueType: "Pothole" },
+        fields: { issueType: "pothole" },
         language,
         reply_local: "Opening hazard report.",
       },

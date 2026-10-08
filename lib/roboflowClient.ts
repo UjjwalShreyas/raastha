@@ -408,10 +408,10 @@ export function parsePotholeWorkflowResult(
 
   const impactDescription =
     potholeCount > 0
-      ? `Roboflow RF-DETR model detected ${potholeCount} pothole defect${
+      ? `${potholeCount} pothole defect${
           potholeCount > 1 ? "s" : ""
-        } with ${confPercent}% peak confidence. High risk of two-wheeler rim damage and commuter swerving.`
-      : `Roboflow workflow identified roadway surface anomalies. Immediate inspection recommended.`;
+        } detected (${confPercent}% conf). 2-wheeler risk.`
+      : `Pothole anomaly detected. Inspection recommended.`;
 
   return {
     potholeCount,

@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Camera,
@@ -20,17 +20,30 @@ import {
   Cpu,
   ShieldCheck,
   Zap,
+  MapPin,
+  Navigation,
+  Compass,
+  Building2,
+  Send,
+  RefreshCw,
+  Mail,
+  Phone,
+  ExternalLink,
+  Radio,
+  Check,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { useIssues, IssueType } from "@/context/IssuesContext";
 import { useLocation } from "@/context/LocationContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { Button } from "@/components/ui/Button";
 import { useRecognition, speak } from "@/hooks/useSpeech";
 import { analyzeHazard, HazardType } from "@/lib/analyzeHazard";
-import { getNearestWard, GHMC_WARDS } from "@/lib/wards";
+import { getNearestWard, GHMC_WARDS, getNearestAuthority, NearbyAuthority } from "@/lib/wards";
 import { HazardDetectionOverlay } from "@/components/hazard/HazardDetectionOverlay";
 import { BoundingBox } from "@/lib/roboflowClient";
+import { processVoiceWithGemini } from "@/lib/ai/voiceAssistant";
 
 // Self-contained embedded SVG images for presets (Zero CORS issues, Hyderabad themes)
 const PRESET_IMAGES: {
@@ -38,12 +51,12 @@ const PRESET_IMAGES: {
   title: string;
   dataUrl: string;
 }[] = [
-  {
-    type: "pothole",
-    title: "Deep Asphalt Pothole (~18cm cavity)",
-    dataUrl:
-      "data:image/svg+xml;utf8," +
-      encodeURIComponent(`
+    {
+      type: "pothole",
+      title: "Deep Asphalt Pothole (~18cm cavity)",
+      dataUrl:
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#2d2d30"/>
         <line x1="0" y1="210" x2="600" y2="210" stroke="#f1c40f" stroke-dasharray="30,25" stroke-width="6"/>
@@ -55,13 +68,13 @@ const PRESET_IMAGES: {
         <text x="30" y="80" fill="#e74c3c" font-family="Helvetica, Arial, sans-serif" font-size="14">Estimated Severity: Cavity Risk | 2-Wheeler Hazard</text>
       </svg>
     `),
-  },
-  {
-    type: "pothole",
-    title: "Dual Roadway Potholes (Multi-Cavity Cluster)",
-    dataUrl:
-      "data:image/svg+xml;utf8," +
-      encodeURIComponent(`
+    },
+    {
+      type: "pothole",
+      title: "Dual Roadway Potholes (Multi-Cavity Cluster)",
+      dataUrl:
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#262629"/>
         <line x1="0" y1="200" x2="600" y2="200" stroke="#f1c40f" stroke-dasharray="30,25" stroke-width="6"/>
@@ -73,13 +86,13 @@ const PRESET_IMAGES: {
         <text x="30" y="80" fill="#ff4d4f" font-family="Helvetica, Arial, sans-serif" font-size="14">Roboflow RF-DETR Multi-Target Localization</text>
       </svg>
     `),
-  },
-  {
-    type: "streetlight",
-    title: "Unlit Luminaire on Durgam Cheruvu Lane",
-    dataUrl:
-      "data:image/svg+xml;utf8," +
-      encodeURIComponent(`
+    },
+    {
+      type: "streetlight",
+      title: "Unlit Luminaire on Durgam Cheruvu Lane",
+      dataUrl:
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#12131a"/>
         <line x1="280" y1="120" x2="280" y2="400" stroke="#3f4254" stroke-width="14"/>
@@ -91,13 +104,13 @@ const PRESET_IMAGES: {
         <text x="30" y="80" fill="#ffb84d" font-family="Helvetica, Arial, sans-serif" font-size="14">Pedestrian Risk: Zero Illumination</text>
       </svg>
     `),
-  },
-  {
-    type: "other",
-    title: "Open Drainage Chamber in Kondapur",
-    dataUrl:
-      "data:image/svg+xml;utf8," +
-      encodeURIComponent(`
+    },
+    {
+      type: "other",
+      title: "Open Drainage Chamber in Kondapur",
+      dataUrl:
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#35363a"/>
         <circle cx="300" cy="220" r="85" fill="#050505" stroke="#ff3838" stroke-width="6"/>
@@ -107,19 +120,54 @@ const PRESET_IMAGES: {
         <text x="30" y="80" fill="#ff3838" font-family="Helvetica, Arial, sans-serif" font-size="14">Uncovered Conduit Opening</text>
       </svg>
     `),
-  },
-];
+    },
+  ];
 
-export default function ReportWizardPage() {
+function ReportWizardContent() {
   const router = useRouter();
   const { language, t, showToast } = useApp();
+  const { citizen } = useAuth();
   const { addReportedIssue, isConfigured } = useIssues();
-  const { coordinates } = useLocation();
+  const {
+    coordinates,
+    status: locationStatus,
+    isReal,
+    accuracy,
+    error: locationError,
+    formattedAddress,
+    requestLocation,
+    setCustomCoordinates,
+  } = useLocation();
 
-  // Component-owned dictation recognizer (appends text to description, never navigates)
+  const searchParams = useSearchParams();
+
+  // Component-owned dictation recognizer (appends text to description and evaluates severity with Gemini)
   const dictation = useRecognition(language, {
-    onFinal: (text) => {
-      setDescription((prev) => (prev ? `${prev} ${text}` : text));
+    onFinal: async (text) => {
+      const fullText = description ? `${description} ${text}` : text;
+      setDescription(fullText);
+
+      // Analyze problem severity & classification using Gemini AI
+      if (fullText.trim().length >= 5) {
+        try {
+          const analysis = await processVoiceWithGemini(fullText, language);
+          if (analysis.issueType) {
+            setHazardType(analysis.issueType);
+          }
+          if (analysis.severityScore) {
+            const mappedScore = Math.min(5, Math.max(1, Math.round(analysis.severityScore))) as 1 | 2 | 3 | 4 | 5;
+            setSeverity(mappedScore);
+          }
+          if (analysis.severityReasoning) {
+            setAiStatusMessage(
+              `Gemini AI: ${analysis.severity?.toUpperCase()} (${analysis.severityScore}/5) - ${analysis.severityReasoning}`
+            );
+            setIsAiApplied(true);
+          }
+        } catch (err) {
+          console.warn("Gemini voice severity analysis notice:", err);
+        }
+      }
     },
   });
 
@@ -128,6 +176,7 @@ export default function ReportWizardPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [isScanningPhoto, setIsScanningPhoto] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isRefreshingLocation, setIsRefreshingLocation] = useState<boolean>(false);
 
   // Engine selection
   const [selectedEngine, setSelectedEngine] = useState<"roboflow" | "gemini">("roboflow");
@@ -150,12 +199,65 @@ export default function ReportWizardPage() {
   );
   const [wardManuallyEdited, setWardManuallyEdited] = useState<boolean>(false);
 
-  // Automatically derive nearest GHMC ward from lat/lng until user manually edits it
+  // Auto-located Nearby State Authority
+  const [nearbyAuthority, setNearbyAuthority] = useState<NearbyAuthority>(() =>
+    getNearestAuthority(coordinates.lat, coordinates.lng)
+  );
+
+  // Read pre-filled query params from voice commands (e.g. from Home or VoiceBar)
   useEffect(() => {
-    if (!wardManuallyEdited && coordinates.lat && coordinates.lng) {
-      setWard(getNearestWard(coordinates.lat, coordinates.lng));
+    if (!searchParams) return;
+    const typeParam = searchParams.get("type");
+    const severityParam = searchParams.get("severity");
+    const descParam = searchParams.get("desc");
+
+    if (typeParam && ["pothole", "streetlight", "garbage", "waterlogging", "other"].includes(typeParam)) {
+      setHazardType(typeParam as IssueType);
+      setIsAiApplied(true);
+    }
+    if (severityParam) {
+      if (severityParam === "critical" || severityParam === "5") setSeverity(5);
+      else if (severityParam === "high" || severityParam === "4") setSeverity(4);
+      else if (severityParam === "medium" || severityParam === "3") setSeverity(3);
+      else if (severityParam === "low" || severityParam === "1" || severityParam === "2") setSeverity(2);
+      setIsAiApplied(true);
+      setAiStatusMessage(`Gemini AI identified ${severityParam.toUpperCase()} priority problem`);
+    }
+    if (descParam) {
+      setDescription(decodeURIComponent(descParam));
+    }
+  }, [searchParams]);
+
+  // Submission success modal
+  const [submissionModalData, setSubmissionModalData] = useState<{
+    trackingId: string;
+    authority: NearbyAuthority;
+  } | null>(null);
+
+  // Automatically derive nearest GHMC ward and State Authority from coordinates
+  useEffect(() => {
+    if (coordinates.lat && coordinates.lng) {
+      const auth = getNearestAuthority(coordinates.lat, coordinates.lng);
+      setNearbyAuthority(auth);
+      if (!wardManuallyEdited) {
+        setWard(getNearestWard(coordinates.lat, coordinates.lng));
+      }
     }
   }, [coordinates.lat, coordinates.lng, wardManuallyEdited]);
+
+  const handleRefreshGps = async () => {
+    setIsRefreshingLocation(true);
+    try {
+      const coords = await requestLocation();
+      const auth = getNearestAuthority(coords.lat, coords.lng);
+      setNearbyAuthority(auth);
+      showToast(`GPS pinpoint updated: ±${accuracy || 10}m accuracy`);
+    } catch {
+      showToast("Unable to fetch exact GPS. Using current pin.");
+    } finally {
+      setIsRefreshingLocation(false);
+    }
+  };
 
   // Dynamic follow-up questions from AI (empty if AI unavailable)
   const [clarifications, setClarifications] = useState<{ question: string; answer?: string }[]>([]);
@@ -341,11 +443,13 @@ export default function ReportWizardPage() {
     setIsSubmitting(true);
 
     try {
+      const authDispatchTag = ` [Dispatched: ${nearbyAuthority.name}]`;
+      const baseDesc = description?.trim() || `${hazardType} reported on ${ward}`;
       const createdRow = await addReportedIssue({
         type: hazardType,
         severity,
         severitySource: isManualOverride ? "manual" : "ai",
-        description: description || `${hazardType} reported on ${ward}`,
+        description: `${baseDesc}${authDispatchTag}`,
         lat: coordinates.lat,
         lng: coordinates.lng,
         ward,
@@ -354,13 +458,16 @@ export default function ReportWizardPage() {
         commuterEstimate: exposureCount,
       });
 
-      const successMsg = `${t("reportSuccess")} ${createdRow.tracking_id}`;
+      const successMsg = `Hazard #${createdRow.tracking_id} reported & dispatched to ${nearbyAuthority.name}`;
       const spoke = speak(successMsg, language);
       if (!spoke) {
         showToast(successMsg);
       }
 
-      router.push("/my-reports");
+      setSubmissionModalData({
+        trackingId: createdRow.tracking_id,
+        authority: nearbyAuthority,
+      });
     } catch (err: any) {
       alert(`Submission error: ${err.message || "Failed to submit report"}`);
     } finally {
@@ -387,19 +494,44 @@ export default function ReportWizardPage() {
           {[1, 2, 3].map((s) => (
             <div
               key={s}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs transition-colors ${
-                step === s
-                  ? "bg-[#3E000C] text-[#FFECD1]"
-                  : step > s
+              className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs transition-colors ${step === s
+                ? "bg-[#3E000C] text-[#FFECD1]"
+                : step > s
                   ? "bg-[#3E000C]/15 text-[#3E000C]"
                   : "bg-white text-[#3E000C]/40 border border-[#3E000C]/15"
-              }`}
+                }`}
             >
               {step > s ? <CheckCircle2 className="w-3.5 h-3.5" /> : s}
             </div>
           ))}
         </div>
       </div>
+
+      {/* Citizen Session Status */}
+      {citizen ? (
+        <div className="bg-[#3E000C]/5 border border-[#3E000C]/15 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-[#3E000C]">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Reporting as: <strong>{citizen.name}</strong> ({citizen.email})</span>
+          </div>
+          <span className="text-[10px] font-semibold tracking-wider text-[#3E000C]/70 uppercase bg-[#3E000C]/10 px-2 py-0.5 rounded-md">
+            Verified Citizen
+          </span>
+        </div>
+      ) : (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3.5 py-2 flex items-center justify-between text-xs text-amber-900">
+          <div className="flex items-center gap-2">
+            <Info className="w-3.5 h-3.5 text-amber-700" />
+            <span>Reporting as Guest / Anonymous Citizen.</span>
+          </div>
+          <a
+            href="/login"
+            className="text-[11px] font-semibold text-[#3E000C] underline hover:text-[#3E000C]/80"
+          >
+            Sign In to track your ticket
+          </a>
+        </div>
+      )}
 
       {/* Backend not configured banner */}
       {!isConfigured && (
@@ -421,69 +553,6 @@ export default function ReportWizardPage() {
             exit={{ opacity: 0, y: -10 }}
             className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs"
           >
-            {/* AI Model Engine Selector */}
-            <div className="bg-[#FFECD1]/30 border border-[#3E000C]/15 rounded-2xl p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#3E000C] uppercase tracking-wider flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-[#3E000C]" />
-                  <span>Choose Computer Vision AI Model</span>
-                </span>
-                <span className="text-[10px] text-[#3E000C]/60 font-semibold">
-                  Active: {selectedEngine === "roboflow" ? "Roboflow Workflow" : "Gemini Multimodal"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {/* 1. Roboflow Trained Model */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedEngine("roboflow")}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
-                    selectedEngine === "roboflow"
-                      ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-xs"
-                      : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
-                  }`}
-                >
-                  <Target className={`w-4 h-4 shrink-0 mt-0.5 ${selectedEngine === "roboflow" ? "text-[#FFECD1]" : "text-[#3E000C]"}`} />
-                  <div>
-                    <div className="text-xs font-bold flex items-center gap-1.5">
-                      <span>Roboflow RF-DETR Pothole Model</span>
-                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${selectedEngine === "roboflow" ? "bg-white/20 text-[#FFECD1]" : "bg-[#3E000C]/10 text-[#3E000C]"}`}>
-                        safestreets
-                      </span>
-                    </div>
-                    <p className={`text-[11px] mt-0.5 leading-snug ${selectedEngine === "roboflow" ? "text-[#FFECD1]/80" : "text-[#3E000C]/65"}`}>
-                      Specialized object detection: precise bounding box overlays & cavity severity scoring.
-                    </p>
-                  </div>
-                </button>
-
-                {/* 2. Google Gemini Vision */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedEngine("gemini")}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
-                    selectedEngine === "gemini"
-                      ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-xs"
-                      : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
-                  }`}
-                >
-                  <Sparkles className={`w-4 h-4 shrink-0 mt-0.5 ${selectedEngine === "gemini" ? "text-[#FFECD1]" : "text-[#3E000C]"}`} />
-                  <div>
-                    <div className="text-xs font-bold flex items-center gap-1.5">
-                      <span>Google Gemini 2.5 Flash</span>
-                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${selectedEngine === "gemini" ? "bg-white/20 text-[#FFECD1]" : "bg-[#3E000C]/10 text-[#3E000C]"}`}>
-                        multimodal
-                      </span>
-                    </div>
-                    <p className={`text-[11px] mt-0.5 leading-snug ${selectedEngine === "gemini" ? "text-[#FFECD1]/80" : "text-[#3E000C]/65"}`}>
-                      General multimodal visual inspection for streetlights, waterlogging, and debris.
-                    </p>
-                  </div>
-                </button>
-              </div>
-            </div>
-
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <h2 className="text-base font-bold text-[#3E000C] flex items-center gap-2">
@@ -493,7 +562,7 @@ export default function ReportWizardPage() {
                   </span>
                 </h2>
                 <p className="text-xs text-[#3E000C]/65 font-normal">
-                  Upload an authentic photo. The {selectedEngine === "roboflow" ? "Roboflow RF-DETR model" : "Gemini Vision engine"} will localize the hazard and estimate severity.
+                  Upload an authentic photo. The Roboflow RF-DETR model will localize the hazard and estimate severity.
                 </p>
               </div>
 
@@ -602,6 +671,32 @@ export default function ReportWizardPage() {
                 </div>
               )}
 
+              {/* 90% Confidence Gate Indicator */}
+              {aiConfidence !== null && (
+                <div>
+                  {aiConfidence >= 0.9 ? (
+                    <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-semibold shadow-2xs">
+                      <CheckCircle className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <span>
+                        AI Confidence: <strong>{Math.round(aiConfidence * 100)}%</strong> (Verified &ge; 90% threshold &bull; Ready to proceed to Step 2)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2.5 p-3.5 bg-rose-50 border border-rose-300 text-rose-950 rounded-xl text-xs shadow-2xs">
+                      <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-rose-900">
+                          Detection Confidence Low ({Math.round(aiConfidence * 100)}% &lt; 90%)
+                        </div>
+                        <p className="text-rose-800/90 leading-relaxed">
+                          Raastha requires at least <strong>90% AI confidence</strong> before proceeding to Step 2 (Voice Dictation &amp; Classification). Please upload or take a clearer, closer photo of the road hazard.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Severity Gauge */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="bg-white p-4 rounded-xl border border-[#3E000C]/12 space-y-2.5">
@@ -614,15 +709,14 @@ export default function ReportWizardPage() {
                     {[1, 2, 3, 4, 5].map((lvl) => (
                       <div
                         key={lvl}
-                        className={`rounded-sm transition-all duration-300 ${
-                          lvl <= severity
-                            ? lvl >= 4
-                              ? "bg-[#3E000C]"
-                              : lvl === 3
+                        className={`rounded-sm transition-all duration-300 ${lvl <= severity
+                          ? lvl >= 4
+                            ? "bg-[#3E000C]"
+                            : lvl === 3
                               ? "bg-[#3E000C]/80"
                               : "bg-[#3E000C]/40"
-                            : "bg-[#3E000C]/10"
-                        }`}
+                          : "bg-[#3E000C]/10"
+                          }`}
                       />
                     ))}
                   </div>
@@ -653,9 +747,8 @@ export default function ReportWizardPage() {
                       Repair Priority
                     </div>
                     <div
-                      className={`text-sm font-black ${
-                        needsFixing ? "text-[#3E000C]" : "text-emerald-800"
-                      }`}
+                      className={`text-sm font-black ${needsFixing ? "text-[#3E000C]" : "text-emerald-800"
+                        }`}
                     >
                       {needsFixing ? "Needs Dispatch / Action" : "Low Urgency"}
                     </div>
@@ -688,11 +781,10 @@ export default function ReportWizardPage() {
                       key={s}
                       type="button"
                       onClick={() => handleManualSeverityChange(s as 1 | 2 | 3 | 4 | 5)}
-                      className={`py-2 px-1 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${
-                        severity === s
-                          ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-2xs"
-                          : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
-                      }`}
+                      className={`py-2 px-1 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${severity === s
+                        ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-2xs"
+                        : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
+                        }`}
                     >
                       <div>Level {s}</div>
                       <div className="text-[9px] font-normal opacity-80 mt-0.5">
@@ -733,7 +825,25 @@ export default function ReportWizardPage() {
             </div>
 
             {/* Step 1 Continue Action */}
-            <div className="flex justify-end pt-4 border-t border-[#3E000C]/10">
+            <div className="pt-4 border-t border-[#3E000C]/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs">
+                {aiConfidence !== null && aiConfidence < 0.9 ? (
+                  <span className="text-rose-900 font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-700 shrink-0" />
+                    <span>Cannot proceed: AI confidence ({Math.round(aiConfidence * 100)}%) is below 90% threshold.</span>
+                  </span>
+                ) : aiConfidence !== null && aiConfidence >= 0.9 ? (
+                  <span className="text-emerald-800 font-semibold flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                    <span>Confidence verified ({Math.round(aiConfidence * 100)}% &ge; 90%). Ready for Step 2.</span>
+                  </span>
+                ) : (
+                  <span className="text-[#3E000C]/60 text-[11px]">
+                    * Upload a clear photo to achieve &ge; 90% AI confidence before advancing.
+                  </span>
+                )}
+              </div>
+
               <Button
                 variant="primary"
                 size="md"
@@ -742,9 +852,13 @@ export default function ReportWizardPage() {
                     alert("Please select or snap a hazard photo to proceed.");
                     return;
                   }
+                  if (aiConfidence !== null && aiConfidence < 0.9) {
+                    showToast(`AI detection confidence is ${Math.round(aiConfidence * 100)}%. Minimum 90% confidence required to proceed.`);
+                    return;
+                  }
                   setStep(2);
                 }}
-                disabled={!photoUrl || isScanningPhoto}
+                disabled={!photoUrl || isScanningPhoto || (aiConfidence !== null && aiConfidence < 0.9)}
                 rightIcon={<ArrowRight className="w-4 h-4" />}
               >
                 Continue to Details
@@ -778,8 +892,9 @@ export default function ReportWizardPage() {
                   Voice Dictation ({language})
                 </span>
                 <Button
-                  variant={dictation.listening ? "danger" : "secondary"}
+                  variant={dictation.listening ? "danger" : dictation.isProcessing ? "primary" : "secondary"}
                   size="sm"
+                  disabled={dictation.isProcessing}
                   onClick={() => {
                     if (dictation.listening) {
                       dictation.stop();
@@ -788,7 +903,11 @@ export default function ReportWizardPage() {
                     }
                   }}
                 >
-                  {dictation.listening ? "Stop Dictation" : "Tap to Speak"}
+                  {dictation.listening
+                    ? "Stop Dictation"
+                    : dictation.isProcessing
+                      ? "Vosk Processing..."
+                      : "Tap to Speak"}
                 </Button>
               </div>
 
@@ -830,11 +949,10 @@ export default function ReportWizardPage() {
                       setHazardType(cat.id);
                       setIsManualOverride(true);
                     }}
-                    className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer ${
-                      hazardType === cat.id
-                        ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-2xs"
-                        : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
-                    }`}
+                    className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer ${hazardType === cat.id
+                      ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-2xs"
+                      : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
+                      }`}
                   >
                     {cat.label}
                   </button>
@@ -900,8 +1018,46 @@ export default function ReportWizardPage() {
                 Step 3: Location Pin & Final Submission
               </h2>
               <p className="text-xs text-[#3E000C]/65 font-normal">
-                Review GPS coordinates and calculated priority score before municipal dispatch.
+                Review GPS coordinates, auto-assigned State Authority dispatch, and priority score.
               </p>
+            </div>
+
+            {/* GPS Live Coordinates & Recalibration Bar */}
+            <div className="bg-[#3E000C]/5 border border-[#3E000C]/15 rounded-2xl p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isReal ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+                  <span className="text-xs font-bold text-[#3E000C]">
+                    {isReal ? "Live GPS Coordinates Locked" : "Default / Pinned Location"}
+                  </span>
+                  {accuracy && (
+                    <span className="text-[10px] bg-[#3E000C]/10 text-[#3E000C] font-semibold px-2 py-0.5 rounded-md">
+                      ±{accuracy}m accuracy
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRefreshGps}
+                  disabled={isRefreshingLocation}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#3E000C]/20 hover:border-[#3E000C]/40 rounded-xl text-xs font-semibold text-[#3E000C] cursor-pointer transition-colors shadow-2xs disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingLocation ? "animate-spin text-[#3E000C]" : "text-[#3E000C]"}`} />
+                  <span>{isRefreshingLocation ? "Locating..." : "Recalibrate GPS"}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div className="bg-white/80 border border-[#3E000C]/10 rounded-xl p-2.5 flex items-center justify-between font-mono">
+                  <span className="text-[#3E000C]/60 text-[11px]">Latitude:</span>
+                  <span className="font-bold text-[#3E000C]">{coordinates.lat.toFixed(6)}° N</span>
+                </div>
+                <div className="bg-white/80 border border-[#3E000C]/10 rounded-xl p-2.5 flex items-center justify-between font-mono">
+                  <span className="text-[#3E000C]/60 text-[11px]">Longitude:</span>
+                  <span className="font-bold text-[#3E000C]">{coordinates.lng.toFixed(6)}° E</span>
+                </div>
+              </div>
             </div>
 
             {/* Calculated Priority Score */}
@@ -923,7 +1079,7 @@ export default function ReportWizardPage() {
             </div>
 
             {/* Dynamic Map */}
-            <div className="h-56 rounded-2xl overflow-hidden border border-[#3E000C]/15 bg-white">
+            <div className="h-56 rounded-2xl overflow-hidden border border-[#3E000C]/15 bg-white relative">
               <DynamicMap
                 center={[coordinates.lat, coordinates.lng]}
                 zoom={15}
@@ -937,6 +1093,46 @@ export default function ReportWizardPage() {
                   },
                 ]}
               />
+              <div className="absolute bottom-2 left-2 z-1000 bg-white/95 backdrop-blur-xs border border-[#3E000C]/15 rounded-lg px-2.5 py-1 text-[10px] text-[#3E000C] font-semibold flex items-center gap-1.5 shadow-xs">
+                <MapPin className="w-3 h-3 text-[#3E000C]" />
+                <span>Hazard Pin: {ward}</span>
+              </div>
+            </div>
+
+            {/* Auto-Located Nearby State Authority Dispatch Card */}
+            <div className="bg-gradient-to-br from-[#3E000C]/5 via-[#FFECD1]/25 to-[#3E000C]/5 border border-[#3E000C]/20 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#3E000C]">
+                  <Building2 className="w-4 h-4 text-[#3E000C]" />
+                  <span>Auto-Assigned State / Municipal Authority</span>
+                </div>
+                <span className="text-[10px] font-bold bg-[#3E000C] text-[#FFECD1] px-2 py-0.5 rounded-md flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-[#FFECD1]" />
+                  {nearbyAuthority.distanceKm ?? 1.2} km away
+                </span>
+              </div>
+
+              <div className="bg-white/90 rounded-xl p-3.5 border border-[#3E000C]/12 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-[#3E000C]">{nearbyAuthority.name}</h3>
+                    <p className="text-xs text-[#3E000C]/75 font-medium">{nearbyAuthority.department}</p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#3E000C]/10 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-[10px] font-semibold text-[#3E000C]/60 uppercase tracking-wider block">Higher Official In Charge</span>
+                    <span className="font-bold text-[#3E000C]">{nearbyAuthority.officialRole}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-semibold text-[#3E000C]/60 uppercase tracking-wider block">Official Dispatch Desk</span>
+                    <span className="font-mono text-[11px] text-[#3E000C]">{nearbyAuthority.nodalEmail}</span>
+                  </div>
+                </div>
+              </div>
+
+
             </div>
 
             {/* GHMC Ward Selector (Auto-derived from coordinates with user override) */}
@@ -1009,16 +1205,95 @@ export default function ReportWizardPage() {
                   isSubmitting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="w-4 h-4" />
+                    <Send className="w-4 h-4" />
                   )
                 }
               >
-                {isSubmitting ? "Submitting..." : "Submit Hazard Report"}
+                {isSubmitting ? "Dispatching to State Authority..." : "Submit & Dispatch to Authority"}
               </Button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Submission & State Authority Dispatch Confirmation Modal */}
+      {submissionModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs font-sans">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white border border-[#3E000C]/20 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-5 shadow-2xl"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 border border-emerald-300 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-7 h-7 text-emerald-700" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#3E000C]">Report Dispatched Successfully</h3>
+                <p className="text-xs text-[#3E000C]/70">
+                  Tracking ID: <strong className="font-mono text-[#3E000C]">{submissionModalData.trackingId}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-[#FFECD1]/30 border border-[#3E000C]/15 rounded-2xl p-4 space-y-2.5 text-xs">
+              <div className="flex items-center gap-2 text-[#3E000C] font-bold">
+                <Building2 className="w-4 h-4 text-[#3E000C]" />
+                <span>Transmitted to State Authority:</span>
+              </div>
+              <div className="pl-6 space-y-1">
+                <p className="font-bold text-[#3E000C]">{submissionModalData.authority.name}</p>
+                <p className="text-[#3E000C]/75">{submissionModalData.authority.officialRole}</p>
+                <p className="text-[11px] font-mono text-[#3E000C]/60">{submissionModalData.authority.nodalEmail}</p>
+              </div>
+              <div className="pt-2 border-t border-[#3E000C]/10 text-[11px] text-emerald-800 flex items-center gap-1.5 font-medium">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Gemini AI Visual Diagnostic Assessment & Priority Score attached to ticket.</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="secondary"
+                size="md"
+                className="flex-1"
+                onClick={() => {
+                  setSubmissionModalData(null);
+                  router.push("/");
+                }}
+              >
+                Return Home
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                className="flex-1"
+                onClick={() => {
+                  setSubmissionModalData(null);
+                  router.push("/my-reports");
+                }}
+              >
+                Track My Reports
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function ReportWizardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-3xl mx-auto px-4 py-16 flex flex-col items-center justify-center space-y-4 font-sans">
+          <Loader2 className="w-8 h-8 animate-spin text-[#3E000C]" />
+          <p className="text-xs text-[#3E000C]/70">Loading Hazard Reporter...</p>
+        </div>
+      }
+    >
+      <ReportWizardContent />
+    </Suspense>
   );
 }

@@ -65,7 +65,7 @@ export const ClarifyOutputSchema = z.object({
 export type ClarifyOutput = z.infer<typeof ClarifyOutputSchema>;
 
 // -----------------------------------------------------------------------------
-// 3. Voice Intent Schema
+// 3. Voice Intent & Problem Severity Schema
 // -----------------------------------------------------------------------------
 export const IntentOutputSchema = z.object({
   intent: z.enum([
@@ -74,6 +74,7 @@ export const IntentOutputSchema = z.object({
     "check_status",
     "change_language",
     "help",
+    "sos",
     "unknown",
   ]),
   fields: z
@@ -81,7 +82,11 @@ export const IntentOutputSchema = z.object({
       destination: z.string().optional(),
       language: z.enum(["en", "hi", "te"]).optional(),
       reportId: z.string().optional(),
-      issueType: z.string().optional(),
+      issueType: z.enum(["pothole", "streetlight", "garbage", "waterlogging", "other"]).optional(),
+      severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+      severity_score: z.number().min(1).max(5).optional(),
+      severity_reasoning: z.string().optional(),
+      recommended_sla_hours: z.number().optional(),
     })
     .default({}),
   language: z.enum(["en", "hi", "te"]),

@@ -15,9 +15,39 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [] });
   }
 
+  const googleApiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const orsKey = process.env.ORS_API_KEY;
 
-  // 1. Try ORS geocoding if key is present
+  // 1. Google Maps Geocoding (Highest precision)
+  if (googleApiKey) {
+    try {
+      const gUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+        q + " Hyderabad Telangana"
+      )}&components=country:IN&key=${googleApiKey}`;
+
+      const res = await fetch(gUrl);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.status === "OK" && Array.isArray(json.results) && json.results.length > 0) {
+          const results: GeocodeResult[] = json.results.map((item: any) => {
+            const formatted = item.formatted_address || "";
+            const mainName = item.address_components?.[0]?.long_name || q;
+            return {
+              name: mainName,
+              address: formatted,
+              lat: item.geometry.location.lat,
+              lng: item.geometry.location.lng,
+            };
+          });
+          return NextResponse.json({ results, provider: "google_maps" });
+        }
+      }
+    } catch {
+      // Fall through to ORS / Nominatim
+    }
+  }
+
+  // 2. Try ORS geocoding if key is present
   if (orsKey) {
     try {
       const orsUrl = `https://api.openrouteservice.org/geocode/search?api_key=${orsKey}&text=${encodeURIComponent(

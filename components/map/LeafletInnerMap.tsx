@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -68,25 +68,31 @@ function MapAutoBounds({
   const map = useMap();
 
   useEffect(() => {
-    if (polylines && polylines.length > 0 && polylines[0].positions.length > 0) {
-      const allPoints: [number, number][] = [];
-      polylines.forEach((poly) => {
-        poly.positions.forEach((pt) => allPoints.push(pt));
-      });
-      if (allPoints.length > 1) {
-        const bounds = L.latLngBounds(allPoints);
-        map.fitBounds(bounds, { padding: [35, 35] });
+    if (!map) return;
+
+    try {
+      if (polylines && polylines.length > 0 && polylines[0].positions.length > 0) {
+        const allPoints: [number, number][] = [];
+        polylines.forEach((poly) => {
+          poly.positions.forEach((pt) => allPoints.push(pt));
+        });
+        if (allPoints.length > 1) {
+          const bounds = L.latLngBounds(allPoints);
+          map.fitBounds(bounds, { padding: [35, 35] });
+          return;
+        }
+      }
+
+      if (markers && markers.length > 1) {
+        const bounds = L.latLngBounds(markers.map((m) => [m.lat, m.lng]));
+        map.fitBounds(bounds, { padding: [45, 45] });
         return;
       }
-    }
 
-    if (markers && markers.length > 1) {
-      const bounds = L.latLngBounds(markers.map((m) => [m.lat, m.lng]));
-      map.fitBounds(bounds, { padding: [45, 45] });
-      return;
+      map.setView(center, map.getZoom() || 14);
+    } catch {
+      // Safe fallback if container is being resized during HMR
     }
-
-    map.setView(center, map.getZoom() || 14);
   }, [center, polylines, markers, map]);
 
   return null;
@@ -99,6 +105,14 @@ export default function LeafletInnerMap({
   polylines = [],
   className = "w-full h-full",
 }: MapProps) {
+  const [isMounted, setIsMounted] = useState<boolean>(false);
+  const [mapKey, setMapKey] = useState<number>(0);
+
+  useEffect(() => {
+    setIsMounted(true);
+    setMapKey((k) => k + 1);
+  }, []);
+
   const createCustomIcon = (type?: string, severity?: number) => {
     let bgColor = "#3E000C";
     let textColor = "#FFECD1";
@@ -149,9 +163,18 @@ export default function LeafletInnerMap({
     });
   };
 
+  if (!isMounted) {
+    return (
+      <div className={`relative isolate z-0 ${className} overflow-hidden rounded-2xl border border-[#3E000C]/15 bg-[#FFECD1]/20 flex items-center justify-center min-h-[340px]`}>
+        <span className="text-xs text-[#3E000C]/60 font-medium">Initializing Map Layers...</span>
+      </div>
+    );
+  }
+
   return (
     <div className={`relative isolate z-0 ${className} overflow-hidden rounded-2xl border border-[#3E000C]/15`}>
       <MapContainer
+        key={`leaflet-map-${mapKey}-${center[0]}-${center[1]}`}
         center={center}
         zoom={zoom}
         scrollWheelZoom={true}
@@ -166,7 +189,7 @@ export default function LeafletInnerMap({
 
         {polylines.map((poly, idx) => (
           <Polyline
-            key={`poly-${idx}`}
+            key={`poly-${idx}-${poly.positions.length}`}
             positions={poly.positions}
             pathOptions={{
               color: poly.color || "#3E000C",
@@ -186,7 +209,7 @@ export default function LeafletInnerMap({
 
         {markers.map((marker, idx) => (
           <Marker
-            key={marker.id || `marker-${idx}`}
+            key={marker.id || `marker-${idx}-${marker.lat}-${marker.lng}`}
             position={[marker.lat, marker.lng]}
             icon={marker.type ? createCustomIcon(marker.type, marker.severity) : defaultIcon}
           >

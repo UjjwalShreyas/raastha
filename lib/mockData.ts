@@ -135,6 +135,33 @@ export const MOCK_ISSUES: HazardIssue[] = [
     },
     isSample: true,
   },
+  {
+    id: "iss-104",
+    trackingId: "SAMPLE-GHMC-04",
+    title: "Few & Broken Streetlights on Villa Access Road",
+    type: "Broken Streetlight",
+    severity: 4,
+    exposureCount: 2800,
+    priorityScore: 112,
+    location: {
+      lat: 17.3245,
+      lng: 78.6172,
+      address: "Sy No. 246, 248 & 249, Pedda Amberpet Municipality",
+      ward: "Pedda Amberpet Municipality (New Life Villas & ORR Exit 11)",
+    },
+    reportedAt: "45 mins ago",
+    slaMinutesRemaining: 120,
+    slaFormatted: "2h 00m left",
+    status: "Pending",
+    beforePhoto: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=600&auto=format&fit=crop&q=80",
+    aiClassification: {
+      detectedObject: "Sparse / Extinguished Streetlights",
+      confidence: 94,
+      hazardIndex: "Low Illumination Hazard",
+      impactDescription: "Only few functional streetlights on interior access lane to New Life Villas. Recommended to follow illuminated NH65 / ORR corridor.",
+    },
+    isSample: true,
+  },
 ];
 
 export const MOCK_DESTINATIONS: {
@@ -143,6 +170,12 @@ export const MOCK_DESTINATIONS: {
   distance: string;
   coordinates: [number, number];
 }[] = [
+  {
+    name: "New Life Villas, Pedda Amberpet",
+    address: "Sy No. 246 , 248 & 249 Pedda Amberpet Municipality, Hyderabad, Telangana 501513",
+    distance: "14.2 km",
+    coordinates: [17.3231, 78.6185],
+  },
   {
     name: "Charminar & Old City",
     address: "Pathergatti, Hyderabad",

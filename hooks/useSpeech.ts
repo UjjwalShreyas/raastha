@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { WavAudioRecorder, transcribeWithVosk } from "@/lib/audioRecorder";
 
 export type VoiceLocale = "en-IN" | "hi-IN" | "te-IN";
 
@@ -32,6 +33,28 @@ export function mapRecognitionError(error: string): string {
   }
 }
 
+export type MicPermissionStatus = "idle" | "granted" | "denied" | "unsupported";
+
+/**
+ * Proactively requests microphone permission from the browser and immediately releases the media tracks.
+ */
+export async function requestMicrophonePermission(): Promise<MicPermissionStatus> {
+  if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
+    return "unsupported";
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Immediately release microphone stream so the recording light does not stay on
+    stream.getTracks().forEach((track) => track.stop());
+    return "granted";
+  } catch (err: any) {
+    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      return "denied";
+    }
+    return "denied";
+  }
+}
+
 export interface UseRecognitionOptions {
   onInterim?: (text: string) => void;
   onFinal?: (text: string) => void;
@@ -42,81 +65,79 @@ export interface UseRecognitionReturn {
   stop: () => void;
   listening: boolean;
   supported: boolean;
+  isProcessing: boolean;
   error: string | null;
 }
 
 /**
- * Hook providing an independent SpeechRecognition instance per component.
+ * Hook providing SpeechRecognition + local Vosk offline model transcription.
+ * Concurrently captures real-time speech and automatically processes completed sentences via Vosk.
  */
 export function useRecognition(
   lang: string,
   options?: UseRecognitionOptions
 ): UseRecognitionReturn {
   const [listening, setListening] = useState<boolean>(false);
-  const [supported, setSupported] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [supported, setSupported] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const recorderRef = useRef<WavAudioRecorder | null>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
+  const capturedInterimRef = useRef<string>("");
   const targetLocale = getLocale(lang);
 
+  // Setup Web Speech API for real-time interim display
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const SpeechRecognitionClass =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    if (!SpeechRecognitionClass) {
-      setSupported(false);
-      return;
-    }
+    if (SpeechRecognitionClass) {
+      try {
+        const recognizer = new SpeechRecognitionClass();
+        recognizer.continuous = false;
+        recognizer.interimResults = true;
+        recognizer.lang = targetLocale;
 
-    setSupported(true);
+        recognizer.onresult = (event: any) => {
+          let interimText = "";
+          let finalText = "";
 
-    try {
-      const recognizer = new SpeechRecognitionClass();
-      recognizer.continuous = false;
-      recognizer.interimResults = true;
-      recognizer.lang = targetLocale;
-
-      recognizer.onresult = (event: any) => {
-        let interimText = "";
-        let finalText = "";
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const item = event.results[i];
-          if (item.isFinal) {
-            finalText += item[0].transcript;
-          } else {
-            interimText += item[0].transcript;
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const item = event.results[i];
+            if (item.isFinal) {
+              finalText += item[0].transcript;
+            } else {
+              interimText += item[0].transcript;
+            }
           }
-        }
 
-        if (interimText && optionsRef.current?.onInterim) {
-          optionsRef.current.onInterim(interimText);
-        }
-        if (finalText && optionsRef.current?.onFinal) {
-          optionsRef.current.onFinal(finalText);
-        }
-      };
+          if (interimText) {
+            capturedInterimRef.current = interimText;
+            optionsRef.current?.onInterim?.(interimText);
+          }
+          if (finalText) {
+            capturedInterimRef.current = finalText;
+            optionsRef.current?.onInterim?.(finalText);
+          }
+        };
 
-      recognizer.onerror = (event: any) => {
-        if (event.error !== "no-speech") {
-          const msg = mapRecognitionError(event.error);
-          setError(msg);
-        }
-        setListening(false);
-      };
+        recognizer.onerror = (event: any) => {
+          if (event.error !== "no-speech") {
+            const msg = mapRecognitionError(event.error);
+            setError(msg);
+          }
+        };
 
-      recognizer.onend = () => {
-        setListening(false);
-      };
-
-      recognitionRef.current = recognizer;
-    } catch {
-      setSupported(false);
+        recognitionRef.current = recognizer;
+      } catch {
+        // Fallback exclusively to Vosk Audio recorder
+      }
     }
 
     return () => {
@@ -130,24 +151,9 @@ export function useRecognition(
     };
   }, [targetLocale]);
 
-  const start = useCallback(() => {
-    setError(null);
-    if (!recognitionRef.current) {
-      setError("Speech recognition is not supported on this device/browser.");
-      return;
-    }
-    try {
-      recognitionRef.current.lang = targetLocale;
-      recognitionRef.current.start();
-      setListening(true);
-    } catch (err: any) {
-      if (err.name !== "InvalidStateError") {
-        setError("Could not activate microphone. Please verify permissions.");
-      }
-    }
-  }, [targetLocale]);
-
-  const stop = useCallback(() => {
+  // Stop recording and process completed sentence through Vosk
+  const stopAndProcess = useCallback(async () => {
+    setListening(false);
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -155,13 +161,75 @@ export function useRecognition(
         // ignore
       }
     }
-    setListening(false);
+
+    if (recorderRef.current) {
+      setIsProcessing(true);
+      try {
+        const wavBlob = await recorderRef.current.stop();
+        if (wavBlob && wavBlob.size > 1000) {
+          // Send to Vosk offline transcription endpoint
+          const voskRes = await transcribeWithVosk(wavBlob);
+          if (voskRes.success && voskRes.text) {
+            optionsRef.current?.onFinal?.(voskRes.text);
+            setIsProcessing(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Vosk transcription notice:", err);
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+
+    // Fallback to interim text if Vosk was offline or returned empty
+    const fallbackText = capturedInterimRef.current.trim();
+    if (fallbackText) {
+      optionsRef.current?.onFinal?.(fallbackText);
+    }
   }, []);
+
+  const start = useCallback(async () => {
+    setError(null);
+    capturedInterimRef.current = "";
+
+    try {
+      // 1. Initialize 16kHz WAV Audio Recorder for Vosk
+      const recorder = new WavAudioRecorder({
+        onSilenceDetected: () => {
+          // Auto-stop and transcribe when sentence finishes
+          stopAndProcess();
+        },
+      });
+
+      await recorder.start();
+      recorderRef.current = recorder;
+      setListening(true);
+
+      // 2. Start Web Speech for interim real-time streaming
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.lang = targetLocale;
+          recognitionRef.current.start();
+        } catch {
+          // ignore if already active or unsupported
+        }
+      }
+    } catch (err: any) {
+      setListening(false);
+      setError("Microphone permission needed to use voice commands.");
+    }
+  }, [targetLocale, stopAndProcess]);
+
+  const stop = useCallback(() => {
+    stopAndProcess();
+  }, [stopAndProcess]);
 
   return {
     start,
     stop,
     listening,
+    isProcessing,
     supported,
     error,
   };
@@ -208,7 +276,6 @@ export function speak(text: string, lang: string): boolean {
 
   const matchingVoice = getMatchingVoice(lang);
   if (!matchingVoice) {
-    // Crucial safety check: device has no voice for this language!
     return false;
   }
 
