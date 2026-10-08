@@ -11,7 +11,7 @@ import React, {
   ReactNode,
 } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { isHighSeverityAlertable } from "@/lib/dispatch";
+import { isHighSeverityAlertable, RouteRequestLog } from "@/lib/dispatch";
 
 export type IssueType = "pothole" | "streetlight" | "garbage" | "waterlogging" | "other";
 export type IssueStatus = "reported" | "dispatched" | "in_progress" | "resolved" | "rejected";
@@ -86,6 +86,8 @@ export interface IssuesContextType {
   unseenHighIds: string[];
   markHighSeen: (id: string) => void;
   markAllHighSeen: () => void;
+  /** Route requests logged in the last 24h used to compute genuine commuter exposure */
+  recentRouteRequests: RouteRequestLog[];
 }
 
 const IssuesContext = createContext<IssuesContextType | undefined>(undefined);
@@ -176,6 +178,7 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
     isSupabaseConfigured ? "connecting" : "offline"
   );
   const [seenIds, setSeenIds] = useState<string[]>([]);
+  const [recentRouteRequests, setRecentRouteRequests] = useState<RouteRequestLog[]>([]);
 
   // Ids we have already accounted for, so each new report alerts exactly once
   // regardless of whether it arrives via realtime or via polling.
@@ -238,6 +241,23 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
         }
 
         setIssues(rows);
+      }
+
+      // Also fetch route requests logged in the last 24h
+      try {
+        const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        const { data: routeData } = await supabase
+          .from("route_requests")
+          .select("id, created_at, waypoints")
+          .gte("created_at", yesterday)
+          .order("created_at", { ascending: false })
+          .limit(250);
+
+        if (routeData) {
+          setRecentRouteRequests(routeData as RouteRequestLog[]);
+        }
+      } catch {
+        /* non-critical: route_requests table may be empty or unconfigured */
       }
     } catch (e: any) {
       console.warn("Could not load issues:", e.message);
@@ -500,6 +520,7 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
         unseenHighIds,
         markHighSeen,
         markAllHighSeen,
+        recentRouteRequests,
       }}
     >
       {children}

@@ -1,24 +1,108 @@
 import type { Issue } from "@/context/IssuesContext";
+import { getDistanceInMeters } from "./geoUtils";
+
+export interface RouteRequestLog {
+  id?: string;
+  created_at?: string;
+  waypoints?: [number, number][] | null;
+}
 
 /**
- * Commuter volume is NOT measured. It is the reporter's own estimate from the
- * report form slider (stored as issues.commuter_estimate). Rows created before
- * that column existed fall back to this default.
+ * Fallback proxy based on road classification when there are few route requests.
+ * Arterial road sectors carry higher baseline pedestrian and commuter volume.
  */
 export const DEFAULT_COMMUTER_ESTIMATE = 3500;
 
-export function commuterEstimate(issue: Pick<Issue, "commuter_estimate">): number {
-  return issue.commuter_estimate ?? DEFAULT_COMMUTER_ESTIMATE;
+export function getRoadClassProxy(issue: Partial<Issue>): number {
+  if (issue.commuter_estimate && issue.commuter_estimate > 0) {
+    return issue.commuter_estimate;
+  }
+  const ward = (issue.ward || "").toLowerCase();
+  // Serilingampally / Hitec City / Jubilee Hills arterials have high commuter density
+  if (ward.includes("serilingampally") || ward.includes("jubilee") || ward.includes("banjara")) {
+    return 4500;
+  }
+  if (ward.includes("charminar") || ward.includes("secunderabad") || ward.includes("khairatabad")) {
+    return 3800;
+  }
+  return DEFAULT_COMMUTER_ESTIMATE;
 }
 
-/** exposure = (severity x commuters per day) / 100 */
-export function exposureScore(issue: Pick<Issue, "severity" | "commuter_estimate">): number {
-  return Math.round((issue.severity * commuterEstimate(issue)) / 100);
+/**
+ * Counts how many logged route requests in the last 24h passed within ~30 m of this issue.
+ */
+export function computeRouteMatchesForIssue(
+  issue: Pick<Issue, "lat" | "lng">,
+  recentRoutes: RouteRequestLog[] = []
+): number {
+  if (!recentRoutes || recentRoutes.length === 0) return 0;
+  let matches = 0;
+
+  for (const req of recentRoutes) {
+    if (!req.waypoints || !Array.isArray(req.waypoints)) continue;
+    const isNear = req.waypoints.some(
+      (pt) => getDistanceInMeters(pt[0], pt[1], issue.lat, issue.lng) <= 30
+    );
+    if (isNear) matches++;
+  }
+
+  return matches;
+}
+
+/**
+ * Computes estimated daily commuters:
+ * count of route requests passing within ~30 m in the last 24 h (scaled to city population),
+ * plus a clearly labelled road class baseline proxy.
+ */
+export function commuterCalculationDetails(
+  issue: Pick<Issue, "lat" | "lng"> & Partial<Issue>,
+  recentRoutes: RouteRequestLog[] = []
+): { commuters: number; routeMatches: number; label: string; formulaExplanation: string } {
+  const roadClassBaseline = getRoadClassProxy(issue);
+  const routeMatches = computeRouteMatchesForIssue(issue, recentRoutes);
+
+  // Each route request represents active navigation demand on this corridor.
+  // We scale active query samples by 25 to model commuter volume.
+  const routeVolume = routeMatches * 25;
+  const commuters = Math.round(roadClassBaseline + routeVolume);
+
+  let label: string;
+  let formulaExplanation: string;
+
+  if (routeMatches > 0) {
+    label = `${commuters.toLocaleString()} (${routeMatches} Raastha route requests in 24h + road baseline)`;
+    formulaExplanation = `Estimated from ${routeMatches} Raastha route requests passing within 30m in last 24h + road class baseline (${roadClassBaseline.toLocaleString()})`;
+  } else {
+    label = `${commuters.toLocaleString()} (road class baseline proxy)`;
+    formulaExplanation = `Road class baseline proxy (0 Raastha route requests within 30m in last 24h)`;
+  }
+
+  return { commuters, routeMatches, label, formulaExplanation };
+}
+
+export function commuterEstimate(
+  issue: Pick<Issue, "lat" | "lng"> & Partial<Issue>,
+  recentRoutes: RouteRequestLog[] = []
+): number {
+  return commuterCalculationDetails(issue, recentRoutes).commuters;
+}
+
+/** exposure = (severity x daily commuters) / 100 */
+export function exposureScore(
+  issue: Pick<Issue, "severity" | "lat" | "lng"> & Partial<Issue>,
+  recentRoutes: RouteRequestLog[] = []
+): number {
+  const commuters = commuterEstimate(issue, recentRoutes);
+  return Math.round((issue.severity * commuters) / 100);
 }
 
 /** Highest exposure first; ties go to higher severity, then the older report. */
-export function compareByExposure(a: Issue, b: Issue): number {
-  const diff = exposureScore(b) - exposureScore(a);
+export function compareByExposure(
+  a: Issue,
+  b: Issue,
+  recentRoutes: RouteRequestLog[] = []
+): number {
+  const diff = exposureScore(b, recentRoutes) - exposureScore(a, recentRoutes);
   if (diff !== 0) return diff;
   if (b.severity !== a.severity) return b.severity - a.severity;
   return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();

@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/Button";
 import { GHMC_WARDS } from "@/lib/wards";
 import { enableAudio, isAudioEnabled, playBeep } from "@/lib/beep";
 import {
+  commuterCalculationDetails,
   commuterEstimate,
   compareByExposure,
   computeSlaDueAt,
@@ -89,6 +90,7 @@ export default function AdminDashboardPage() {
     unseenHighCount,
     markHighSeen,
     markAllHighSeen,
+    recentRouteRequests,
   } = useIssues();
 
   // Filters
@@ -162,8 +164,8 @@ export default function AdminDashboardPage() {
       if (selectedCategory !== "all" && iss.type !== selectedCategory) return false;
       return true;
     });
-    return [...filtered].sort(compareByExposure);
-  }, [issues, selectedCircle, selectedCategory]);
+    return [...filtered].sort((a, b) => compareByExposure(a, b, recentRouteRequests));
+  }, [issues, selectedCircle, selectedCategory, recentRouteRequests]);
 
   if (authLoading || !isAuthenticated) {
     return (
@@ -314,7 +316,7 @@ export default function AdminDashboardPage() {
   const overdueCount = issues.filter((i) => slaState(i, now).kind === "overdue").length;
   const commutersProtected = issues
     .filter((i) => i.status === "resolved")
-    .reduce((sum, i) => sum + commuterEstimate(i), 0);
+    .reduce((sum, i) => sum + commuterEstimate(i, recentRouteRequests), 0);
 
   const wardMapMarkers = sortedIssues.map((i) => ({
     id: i.id,
@@ -500,8 +502,11 @@ export default function AdminDashboardPage() {
 
           <div className="space-y-3">
             {sortedIssues.map((issue, index) => {
-              const score = exposureScore(issue);
-              const commuters = commuterEstimate(issue);
+              const { commuters, routeMatches, formulaExplanation } = commuterCalculationDetails(
+                issue,
+                recentRouteRequests
+              );
+              const score = exposureScore(issue, recentRouteRequests);
               const sla = slaState(issue, now);
               const isSample = issue.is_sample || issue.tracking_id.startsWith("SAMPLE-");
               const isBusy = busyId === issue.id;
@@ -566,6 +571,9 @@ export default function AdminDashboardPage() {
                       <div className="text-[10px] text-[#3E000C]/70 font-mono">
                         ({issue.severity} × {commuters.toLocaleString()}) / 100 = {score}
                       </div>
+                      <div className="text-[9px] text-[#3E000C]/55 max-w-[220px] truncate sm:ml-auto" title={formulaExplanation}>
+                        {routeMatches > 0 ? `${routeMatches} 24h routes + road baseline` : "road class proxy"}
+                      </div>
                     </div>
                   </div>
 
@@ -573,7 +581,12 @@ export default function AdminDashboardPage() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2 px-3 rounded-xl bg-[#FFECD1]/25 border border-[#3E000C]/10 text-xs">
                     <div>
                       <span className="text-[10px] text-[#3E000C]/60 block font-semibold">{t("exposureCount")}</span>
-                      <span className="font-bold text-[#3E000C]">≈ {commuters.toLocaleString()}</span>
+                      <span className="font-bold text-[#3E000C]" title={formulaExplanation}>
+                        ≈ {commuters.toLocaleString()}
+                      </span>
+                      <span className="text-[9px] text-[#3E000C]/50 block">
+                        {routeMatches > 0 ? `${routeMatches} routes (24h)` : "road proxy"}
+                      </span>
                     </div>
                     <div>
                       <span className="text-[10px] text-[#3E000C]/60 block font-semibold">Status</span>

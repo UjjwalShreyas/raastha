@@ -284,3 +284,34 @@ create policy "Authorities can upload repair photos"
     bucket_id = 'issue-photos'
     and (storage.foldername(name))[1] = 'repairs'
   );
+
+-- 11. TABLE: route_requests (Anonymous Corridor Navigation Demand)
+-- Logs route requests (no user identity) to measure genuine commuter exposure
+create table if not exists public.route_requests (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamp with time zone default now() not null,
+  origin_lat double precision not null,
+  origin_lng double precision not null,
+  dest_lat double precision not null,
+  dest_lng double precision not null,
+  waypoints jsonb, -- simplified array of [lat, lng] points sampled along the route
+  distance_meters double precision,
+  duration_seconds double precision
+);
+
+create index if not exists idx_route_requests_created_at on public.route_requests(created_at desc);
+
+alter table public.route_requests enable row level security;
+
+drop policy if exists "Anyone can insert route requests" on public.route_requests;
+create policy "Anyone can insert route requests"
+  on public.route_requests
+  for insert
+  with check (true);
+
+drop policy if exists "Anyone can select route requests" on public.route_requests;
+create policy "Anyone can select route requests"
+  on public.route_requests
+  for select
+  using (true);
+

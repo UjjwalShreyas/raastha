@@ -65,8 +65,8 @@ graph TD
 | Feature | Current Implementation | Honest Production Scope |
 | :--- | :--- | :--- |
 | **Hazard Severity** | Gemini estimates visual severity (1–5) based on surface cavitation and rubble spread. | Single-photo depth estimation is an approximation; lidar/depth sensors would be needed for millimeter depth. |
-| **Daily Commuters** | Documented proxy based on road classification (arterial: 3500+, secondary: 1500, residential: 500). | In full production, this would integrate with municipal traffic sensors or bus transit ridership data. |
-| **Street Lighting** | Modeled arterial corridor LUX indices (80ft & 100ft arterial roads vs inner lanes). | Replaces unverified CCTV claims with tangible illumination proxies. |
+| **Daily Commuters** | Estimated from Raastha route requests passing within ~30m in the last 24h + road class baseline proxy. | Logs anonymous corridor queries in route_requests table without user identity. |
+| **Routing & Safety** | OpenRouteService multi-route alternatives evaluated against active hazard reports in lib/safety.ts. | Real ORS turn-by-turn guidance, straight-line fallback with sampling every ~25m and ~30m hazard proximity detection. |
 | **Voice Engine** | Web Speech API with automatic typed search fallback for unsupported browsers. | Native Android/iOS apps would embed on-device whisper models for offline multilingual recognition. |
 | **Backend Sync** | Dual-tier: Supabase client ready, backed by a persistent multi-device server store. | Works out-of-the-box on local dev and Vercel without mandatory Supabase provisioning. |
 
