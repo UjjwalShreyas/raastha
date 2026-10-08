@@ -22,9 +22,10 @@ import { DynamicMap } from "@/components/map/DynamicMap";
 import { MOCK_DESTINATIONS, MOCK_BASE_COORDINATES } from "@/lib/mockData";
 import { fetchOsrmRoute, ComputedRoute } from "@/lib/routingEngine";
 import { Button } from "@/components/ui/Button";
+import { speak } from "@/hooks/useSpeech";
 
 export default function SafeRoutePage() {
-  const { language, voice, triggerSOS, t } = useApp();
+  const { language, triggerSOS, t, showToast } = useApp();
   const { issues } = useIssues();
   const { coordinates, requestLocation, isReal } = useLocation();
 
@@ -81,9 +82,12 @@ export default function SafeRoutePage() {
     setIsNavigating(true);
     setCurrentStepIndex(0);
     if (activeRoute) {
-      const textToSpeak = `${t("navStart")} ${destination.name}. Safety score is ${activeRoute.safetyScore} out of 100.`;
+      const textToSpeak = `${t("navStart")} ${destination.name}`;
       if (!audioNavigationMuted) {
-        voice.speak(textToSpeak, language);
+        const spoke = speak(textToSpeak, language);
+        if (!spoke) {
+          showToast(textToSpeak);
+        }
       }
     }
   };
@@ -93,11 +97,21 @@ export default function SafeRoutePage() {
       const nextIdx = currentStepIndex + 1;
       setCurrentStepIndex(nextIdx);
       if (!audioNavigationMuted) {
-        voice.speak(`In ${turnByTurnSteps[nextIdx].dist}, ${turnByTurnSteps[nextIdx].text}`, language);
+        if (language === "EN") {
+          const stepText = `In ${turnByTurnSteps[nextIdx].dist}, ${turnByTurnSteps[nextIdx].text}`;
+          const spoke = speak(stepText, "EN");
+          if (!spoke) showToast(stepText);
+        } else {
+          showToast(`${turnByTurnSteps[nextIdx].dist}: ${turnByTurnSteps[nextIdx].text}`);
+        }
       }
     } else {
       setIsNavigating(false);
-      voice.speak(t("navArrived"), language);
+      const arriveText = t("navArrived");
+      const spoke = speak(arriveText, language);
+      if (!spoke) {
+        showToast(arriveText);
+      }
     }
   };
 

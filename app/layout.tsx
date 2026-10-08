@@ -6,6 +6,7 @@ import { IssuesProvider } from "@/context/IssuesContext";
 import { Navbar } from "@/components/Navbar";
 import { VoiceBar } from "@/components/ui/VoiceBar";
 import { SOSModal } from "@/components/SOSModal";
+import { ToastBanner } from "@/components/ToastBanner";
 
 export const metadata: Metadata = {
   title: "Raastha | Voice-First Civic Safety & Safe Corridor Navigation",
@@ -28,6 +29,7 @@ export default function RootLayout({
           <IssuesProvider>
             <AppProvider>
               <Navbar />
+              <ToastBanner />
               <main className="flex-1 pb-24 relative">{children}</main>
               <VoiceBar />
               <SOSModal />

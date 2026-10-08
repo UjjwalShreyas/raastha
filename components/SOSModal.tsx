@@ -1,55 +1,70 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShieldAlert, PhoneCall, Radio, X, Share2, MessageCircle, Copy, Check } from "lucide-react";
-import { useApp } from "@/context/AppContext";
+import {
+  ShieldAlert,
+  PhoneCall,
+  Radio,
+  X,
+  Share2,
+  MessageCircle,
+  Check,
+  AlertCircle,
+  ExternalLink,
+} from "lucide-react";
 import { useLocation } from "@/context/LocationContext";
-import { Button } from "./ui/Button";
+import { SOS_OPEN_EVENT, SOS_CLOSE_EVENT, closeSosSheet } from "@/lib/sosEvents";
 
 export function SOSModal() {
-  const { sosActive, dismissSOS } = useApp();
-  const { coordinates, accuracy, requestLocation, isReal } = useLocation();
+  const [isOpen, setIsOpen] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const { coordinates, accuracy, requestLocation } = useLocation();
 
-  // Request high-accuracy GPS only when SOS is active and not already acquired
-  React.useEffect(() => {
-    if (sosActive && !isReal) {
+  // Listen to window-level custom events
+  useEffect(() => {
+    const handleOpen = () => {
+      setIsOpen(true);
+      // Request high-accuracy GPS ONLY when the SOS sheet opens
       requestLocation();
-    }
-  }, [sosActive, isReal, requestLocation]);
+    };
 
-  if (!sosActive) return null;
+    const handleClose = () => {
+      setIsOpen(false);
+    };
 
-  const googleMapsUrl = `https://maps.google.com/?q=${coordinates.lat.toFixed(5)},${coordinates.lng.toFixed(5)}`;
-  const emergencyMessage = `EMERGENCY ALERT (Raastha): I need immediate assistance! My live GPS coordinates are ${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}. View live location on Google Maps: ${googleMapsUrl}`;
+    window.addEventListener(SOS_OPEN_EVENT, handleOpen);
+    window.addEventListener(SOS_CLOSE_EVENT, handleClose);
+
+    return () => {
+      window.removeEventListener(SOS_OPEN_EVENT, handleOpen);
+      window.removeEventListener(SOS_CLOSE_EVENT, handleClose);
+    };
+  }, [requestLocation]);
+
+  if (!isOpen) return null;
+
+  const latStr = coordinates.lat.toFixed(5);
+  const lngStr = coordinates.lng.toFixed(5);
+  const mapsUrl = `https://maps.google.com/?q=${latStr},${lngStr}`;
+  const emergencyMessage = `EMERGENCY ASSISTANCE NEEDED: My live coordinates are ${latStr}, ${lngStr}. Live Google Maps link: ${mapsUrl}`;
 
   const handleWebShare = async () => {
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
-          title: "Raastha Emergency SOS",
+          title: "Emergency Location",
           text: emergencyMessage,
-          url: googleMapsUrl,
+          url: mapsUrl,
         });
-      } catch (e) {
-        console.warn("Share cancelled or unsupported:", e);
+      } catch (err) {
+        console.warn("Share cancelled or failed:", err);
       }
     } else {
       await navigator.clipboard.writeText(emergencyMessage);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     }
-  };
-
-  const handleWhatsAppShare = () => {
-    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(emergencyMessage)}`;
-    window.open(url, "_blank");
-  };
-
-  const handleSmsShare = () => {
-    const url = `sms:?body=${encodeURIComponent(emergencyMessage)}`;
-    window.location.href = url;
   };
 
   return (
@@ -65,110 +80,117 @@ export function SOSModal() {
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-[#FFECD1]/15">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-red-600/25 border border-red-500/40 flex items-center justify-center text-red-300">
+              <div className="w-8 h-8 rounded-xl bg-red-600/30 border border-red-500/50 flex items-center justify-center text-red-300">
                 <ShieldAlert className="w-4 h-4" />
               </div>
               <div>
                 <h2 className="text-sm font-bold text-[#FFECD1]">
-                  Emergency SOS Location Sharing
+                  Emergency Safety Sheet
                 </h2>
                 <p className="text-[11px] text-[#FFECD1]/70">
-                  Instant location dispatch to trusted contacts & emergency services
+                  Direct links to call police or share coordinates
                 </p>
               </div>
             </div>
             <button
-              onClick={dismissSOS}
+              type="button"
+              onClick={closeSosSheet}
               className="p-1.5 text-[#FFECD1]/60 hover:text-[#FFECD1] rounded-lg hover:bg-[#FFECD1]/10 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Body Content */}
-          <div className="space-y-4">
-            {/* Live GPS Coordinates */}
-            <div className="bg-[#FFECD1]/8 p-3.5 rounded-2xl border border-[#FFECD1]/15 space-y-1.5">
-              <div className="flex items-center justify-between text-[11px] text-[#FFECD1]/70">
-                <span className="flex items-center gap-1.5 font-bold">
-                  <Radio className="w-3.5 h-3.5 text-red-400 animate-pulse" />
-                  Live GPS Signal
-                </span>
-                <span className="text-[#FFECD1] font-mono text-[10px]">
-                  Accuracy: ±{accuracy || 12}m
-                </span>
-              </div>
-              <div className="text-xs font-mono font-bold text-[#FFECD1] flex items-center justify-between">
-                <span>
-                  {coordinates.lat.toFixed(5)}, {coordinates.lng.toFixed(5)}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-[#FFECD1]/10 font-sans">
-                  Hyderabad
-                </span>
-              </div>
-            </div>
+          {/* Transparent Honest Disclaimer */}
+          <div className="p-3 bg-[#FFECD1]/10 border border-[#FFECD1]/20 rounded-2xl flex items-start gap-2.5 text-xs text-[#FFECD1]">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#FFECD1]" />
+            <p className="font-semibold leading-relaxed">
+              These buttons open your own phone apps. Raastha does not send alerts on its own.
+            </p>
+          </div>
 
-            {/* Emergency Sharing Buttons */}
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#FFECD1]/70 block">
-                Share Live GPS Coordinates Via:
+          {/* Live Coordinates Box */}
+          <div className="bg-[#FFECD1]/8 p-3.5 rounded-2xl border border-[#FFECD1]/15 space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] text-[#FFECD1]/70">
+              <span className="flex items-center gap-1.5 font-bold">
+                <Radio className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+                Your Live GPS Coordinates
               </span>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={handleWhatsAppShare}
-                  className="p-2.5 rounded-xl bg-[#FFECD1]/10 hover:bg-[#FFECD1]/20 border border-[#FFECD1]/20 text-center text-xs font-bold transition-all flex flex-col items-center gap-1 cursor-pointer"
-                >
-                  <MessageCircle className="w-4 h-4 text-emerald-400" />
-                  <span className="text-[11px]">WhatsApp</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSmsShare}
-                  className="p-2.5 rounded-xl bg-[#FFECD1]/10 hover:bg-[#FFECD1]/20 border border-[#FFECD1]/20 text-center text-xs font-bold transition-all flex flex-col items-center gap-1 cursor-pointer"
-                >
-                  <Radio className="w-4 h-4 text-amber-300" />
-                  <span className="text-[11px]">Cellular SMS</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleWebShare}
-                  className="p-2.5 rounded-xl bg-[#FFECD1]/10 hover:bg-[#FFECD1]/20 border border-[#FFECD1]/20 text-center text-xs font-bold transition-all flex flex-col items-center gap-1 cursor-pointer"
-                >
-                  {copied ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
-                  ) : (
-                    <Share2 className="w-4 h-4 text-sky-300" />
-                  )}
-                  <span className="text-[11px]">{copied ? "Copied" : "Share / Copy"}</span>
-                </button>
-              </div>
+              <span className="text-[#FFECD1] font-mono text-[10px]">
+                {accuracy ? `Accuracy ±${Math.round(accuracy)}m` : "Acquiring..."}
+              </span>
             </div>
-
-            {/* Direct Call 112 Action */}
-            <div className="pt-2 flex gap-2.5">
-              <Button
-                variant="primary"
-                size="md"
-                className="flex-1 font-bold bg-red-600 hover:bg-red-700 text-white border-none"
-                leftIcon={<PhoneCall className="w-4 h-4" />}
-                onClick={() => {
-                  window.location.href = "tel:112";
-                }}
+            <div className="text-xs font-mono font-bold text-[#FFECD1] flex items-center justify-between">
+              <span>{latStr}, {lngStr}</span>
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] underline flex items-center gap-1 hover:text-[#FFECD1]/80"
               >
-                Call Police (112)
-              </Button>
-              <Button
-                variant="secondary"
-                size="md"
-                className="w-28 text-[#FFECD1]/80 hover:text-[#FFECD1]"
-                onClick={dismissSOS}
-              >
-                Dismiss
-              </Button>
+                Maps Link <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="space-y-2.5">
+            {/* 1. Direct Call 112 Button */}
+            <a
+              href="tel:112"
+              className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm shadow-md transition-colors"
+            >
+              <PhoneCall className="w-4 h-4" />
+              <span>Call Police / Emergency (112)</span>
+            </a>
+
+            {/* Grid of External App Sharing Links */}
+            <div className="grid grid-cols-3 gap-2">
+              {/* WhatsApp Link */}
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(emergencyMessage)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-3 rounded-2xl bg-[#FFECD1]/10 hover:bg-[#FFECD1]/20 border border-[#FFECD1]/20 text-center text-xs font-bold transition-all flex flex-col items-center gap-1.5 cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-400" />
+                <span className="text-[11px]">WhatsApp</span>
+              </a>
+
+              {/* SMS Link */}
+              <a
+                href={`sms:?body=${encodeURIComponent(emergencyMessage)}`}
+                className="p-3 rounded-2xl bg-[#FFECD1]/10 hover:bg-[#FFECD1]/20 border border-[#FFECD1]/20 text-center text-xs font-bold transition-all flex flex-col items-center gap-1.5 cursor-pointer"
+              >
+                <Radio className="w-4 h-4 text-amber-300" />
+                <span className="text-[11px]">Cellular SMS</span>
+              </a>
+
+              {/* Share / Copy Location */}
+              <button
+                type="button"
+                onClick={handleWebShare}
+                className="p-3 rounded-2xl bg-[#FFECD1]/10 hover:bg-[#FFECD1]/20 border border-[#FFECD1]/20 text-center text-xs font-bold transition-all flex flex-col items-center gap-1.5 cursor-pointer"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Share2 className="w-4 h-4 text-sky-300" />
+                )}
+                <span className="text-[11px]">{copied ? "Copied" : "Share GPS"}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Dismiss button */}
+          <div className="pt-2 border-t border-[#FFECD1]/15 text-center">
+            <button
+              type="button"
+              onClick={closeSosSheet}
+              className="text-xs font-semibold text-[#FFECD1]/70 hover:text-[#FFECD1] underline cursor-pointer"
+            >
+              Dismiss Safety Sheet
+            </button>
           </div>
         </motion.div>
       </div>

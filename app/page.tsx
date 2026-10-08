@@ -16,25 +16,70 @@ import {
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useLocation } from "@/context/LocationContext";
+import { useRecognition, speak } from "@/hooks/useSpeech";
+import { parseVoiceIntent } from "@/lib/intents";
+import { openSosSheet } from "@/lib/sosEvents";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
-  const { language, setLanguage, voice, triggerSOS, t } = useApp();
+  const router = useRouter();
+  const { language, setLanguage, triggerSOS, t, showToast } = useApp();
   const { error: locationError } = useLocation();
   const [typedInput, setTypedInput] = useState<string>("");
   const [isTypingFallbackOpen, setIsTypingFallbackOpen] = useState<boolean>(false);
+  const [transcriptText, setTranscriptText] = useState<string>("");
+
+  const handleExecuteIntent = (rawText: string) => {
+    const intent = parseVoiceIntent(rawText);
+    if (intent === "report") {
+      const msg = t("voiceOpeningReport");
+      const ok = speak(msg, language);
+      if (!ok) showToast(msg);
+      router.push("/report");
+    } else if (intent === "route") {
+      const msg = t("voiceOpeningRoute");
+      const ok = speak(msg, language);
+      if (!ok) showToast(msg);
+      router.push("/route");
+    } else if (intent === "my_reports") {
+      const msg = t("voiceOpeningMyReports");
+      const ok = speak(msg, language);
+      if (!ok) showToast(msg);
+      router.push("/my-reports");
+    } else if (intent === "sos") {
+      const msg = t("voiceOpeningSOS");
+      const ok = speak(msg, language);
+      if (!ok) showToast(msg);
+      openSosSheet();
+    } else {
+      const msg = t("voiceUnknownCommand");
+      showToast(msg);
+    }
+  };
+
+  const recognition = useRecognition(language, {
+    onFinal: (text) => {
+      setTranscriptText(text);
+      handleExecuteIntent(text);
+    },
+    onInterim: (text) => {
+      setTranscriptText(text);
+    },
+  });
 
   const handleVoiceToggle = () => {
-    if (voice.isListening) {
-      voice.stopListening();
+    if (recognition.listening) {
+      recognition.stop();
     } else {
-      voice.startListening(language);
+      setTranscriptText("");
+      recognition.start();
     }
   };
 
   const handleTypedSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!typedInput.trim()) return;
-    voice.speak(`Received instruction: ${typedInput}`, language);
+    handleExecuteIntent(typedInput.trim());
     setTypedInput("");
     setIsTypingFallbackOpen(false);
   };
@@ -85,7 +130,7 @@ export default function Home() {
         {/* Big Interactive Microphone Button */}
         <div className="flex flex-col items-center justify-center pt-2">
           <div className="relative">
-            {voice.isListening && (
+            {recognition.listening && (
               <motion.div
                 initial={{ scale: 0.8, opacity: 0.8 }}
                 animate={{ scale: 1.35, opacity: 0 }}
@@ -98,27 +143,27 @@ export default function Home() {
               type="button"
               onClick={handleVoiceToggle}
               className={`relative z-10 w-24 h-24 sm:w-28 sm:h-28 rounded-full flex flex-col items-center justify-center transition-all duration-300 shadow-xl cursor-pointer ${
-                voice.isListening
+                recognition.listening
                   ? "bg-red-700 text-white ring-4 ring-red-300 scale-105"
                   : "bg-[#3E000C] text-[#FFECD1] hover:scale-102 hover:shadow-2xl"
               }`}
             >
-              <Mic className={`w-10 h-10 ${voice.isListening ? "animate-pulse" : ""}`} />
+              <Mic className={`w-10 h-10 ${recognition.listening ? "animate-pulse" : ""}`} />
             </button>
           </div>
 
           <div className="mt-3 text-center space-y-2">
             <span className="text-xs font-bold text-[#3E000C]">
-              {voice.isListening ? t("listening") : t("speakNow")}
+              {recognition.listening ? t("listening") : t("speakNow")}
             </span>
-            {voice.transcript && (
+            {transcriptText && (
               <p className="text-xs text-[#3E000C]/80 bg-white/80 border border-[#3E000C]/12 px-3 py-1.5 rounded-xl max-w-sm mx-auto font-medium">
-                "{voice.transcript}"
+                "{transcriptText}"
               </p>
             )}
-            {voice.speechNotice && (
+            {recognition.error && (
               <p className="text-[11px] text-amber-900 bg-amber-100/90 border border-amber-300 px-3 py-1.5 rounded-xl max-w-sm mx-auto font-medium">
-                {t("micDenied")}
+                {recognition.error}
               </p>
             )}
             {locationError && (

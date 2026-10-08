@@ -2,104 +2,121 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
-// Support both standard SpeechRecognition and WebKit prefix
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-  message?: string;
+export type VoiceLocale = "en-IN" | "hi-IN" | "te-IN";
+
+/**
+ * Maps app language codes (EN, HI, TE) to standard Indian BCP-47 locale tags.
+ */
+export function getLocale(langCode: string): VoiceLocale {
+  const upper = (langCode || "EN").toUpperCase();
+  if (upper === "HI" || upper === "HI-IN") return "hi-IN";
+  if (upper === "TE" || upper === "TE-IN") return "te-IN";
+  return "en-IN";
 }
 
-interface SpeechRecognitionResultItem {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognitionResultListLike {
-  [index: number]: {
-    [index: number]: SpeechRecognitionResultItem;
-    isFinal: boolean;
-  };
-  length: number;
-}
-
-interface SpeechRecognitionEventLike extends Event {
-  resultIndex: number;
-  results: SpeechRecognitionResultListLike;
-}
-
-interface SpeechRecognitionInstance extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionInstance;
-    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+/**
+ * Maps recognition error codes to clear, friendly user notifications.
+ */
+export function mapRecognitionError(error: string): string {
+  switch (error) {
+    case "not-allowed":
+      return "Microphone permission denied. Please allow microphone access in your browser settings.";
+    case "no-speech":
+      return "No speech was detected. Please try speaking again.";
+    case "language-not-supported":
+      return "Speech recognition is not supported for this language on your device.";
+    case "network":
+      return "Network connection issue during speech recognition.";
+    default:
+      return `Voice recognition notice: ${error}`;
   }
 }
 
-export function useSpeech() {
-  const [isListening, setIsListening] = useState<boolean>(false);
-  const [transcript, setTranscript] = useState<string>("");
-  const [supported, setSupported] = useState<boolean>(false);
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
-  const [speechNotice, setSpeechNotice] = useState<string | null>(null);
+export interface UseRecognitionOptions {
+  onInterim?: (text: string) => void;
+  onFinal?: (text: string) => void;
+}
 
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+export interface UseRecognitionReturn {
+  start: () => void;
+  stop: () => void;
+  listening: boolean;
+  supported: boolean;
+  error: string | null;
+}
+
+/**
+ * Hook providing an independent SpeechRecognition instance per component.
+ */
+export function useRecognition(
+  lang: string,
+  options?: UseRecognitionOptions
+): UseRecognitionReturn {
+  const [listening, setListening] = useState<boolean>(false);
+  const [supported, setSupported] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const recognitionRef = useRef<any>(null);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  const targetLocale = getLocale(lang);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const SpeechRecognitionClass =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (typeof window === "undefined") return;
 
-      if (SpeechRecognitionClass) {
-        setSupported(true);
-        try {
-          const instance = new SpeechRecognitionClass();
-          instance.continuous = true;
-          instance.interimResults = true;
+    const SpeechRecognitionClass =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-          instance.onresult = (event: SpeechRecognitionEventLike) => {
-            let currentText = "";
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              const res = event.results[i];
-              if (res && res[0]) {
-                currentText += res[0].transcript;
-              }
-            }
-            if (currentText) {
-              setTranscript(currentText);
-            }
-          };
+    if (!SpeechRecognitionClass) {
+      setSupported(false);
+      return;
+    }
 
-          instance.onerror = (event: SpeechRecognitionErrorEvent) => {
-            if (event.error === "not-allowed") {
-              setSpeechNotice("Microphone permission denied. Please allow microphone access or use text fallback.");
-            } else if (event.error !== "no-speech") {
-              console.warn("Speech recognition notice:", event.error);
-            }
-            setIsListening(false);
-          };
+    setSupported(true);
 
-          instance.onend = () => {
-            setIsListening(false);
-          };
+    try {
+      const recognizer = new SpeechRecognitionClass();
+      recognizer.continuous = false;
+      recognizer.interimResults = true;
+      recognizer.lang = targetLocale;
 
-          recognitionRef.current = instance;
-        } catch (e) {
-          console.warn("Failed to initialize speech recognition:", e);
-          setSupported(false);
+      recognizer.onresult = (event: any) => {
+        let interimText = "";
+        let finalText = "";
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalText += item[0].transcript;
+          } else {
+            interimText += item[0].transcript;
+          }
         }
-      } else {
-        setSupported(false);
-      }
+
+        if (interimText && optionsRef.current?.onInterim) {
+          optionsRef.current.onInterim(interimText);
+        }
+        if (finalText && optionsRef.current?.onFinal) {
+          optionsRef.current.onFinal(finalText);
+        }
+      };
+
+      recognizer.onerror = (event: any) => {
+        if (event.error !== "no-speech") {
+          const msg = mapRecognitionError(event.error);
+          setError(msg);
+        }
+        setListening(false);
+      };
+
+      recognizer.onend = () => {
+        setListening(false);
+      };
+
+      recognitionRef.current = recognizer;
+    } catch {
+      setSupported(false);
     }
 
     return () => {
@@ -111,35 +128,26 @@ export function useSpeech() {
         }
       }
     };
-  }, []);
+  }, [targetLocale]);
 
-  const startListening = useCallback(
-    (langCode: string = "en-IN") => {
-      if (!supported || !recognitionRef.current) {
-        setSpeechNotice("Speech recognition is not supported in this browser. Please use keyboard input.");
-        return;
+  const start = useCallback(() => {
+    setError(null);
+    if (!recognitionRef.current) {
+      setError("Speech recognition is not supported on this device/browser.");
+      return;
+    }
+    try {
+      recognitionRef.current.lang = targetLocale;
+      recognitionRef.current.start();
+      setListening(true);
+    } catch (err: any) {
+      if (err.name !== "InvalidStateError") {
+        setError("Could not activate microphone. Please verify permissions.");
       }
+    }
+  }, [targetLocale]);
 
-      // Map language code to Indian locales
-      let targetLang = "en-IN";
-      if (langCode === "EN" || langCode === "en-IN" || langCode === "en-US") targetLang = "en-IN";
-      if (langCode === "HI" || langCode === "hi-IN") targetLang = "hi-IN";
-      if (langCode === "TE" || langCode === "te-IN") targetLang = "te-IN";
-
-      try {
-        setTranscript("");
-        setSpeechNotice(null);
-        recognitionRef.current.lang = targetLang;
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch (err) {
-        console.warn("Speech recognition start notice:", err);
-      }
-    },
-    [supported]
-  );
-
-  const stopListening = useCallback(() => {
+  const stop = useCallback(() => {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -147,61 +155,74 @@ export function useSpeech() {
         // ignore
       }
     }
-    setIsListening(false);
+    setListening(false);
   }, []);
 
-  const speak = useCallback(
-    (text: string, langCode: string = "en-IN") => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        console.warn("Speech Synthesis not supported in this browser.");
-        return;
-      }
-
-      try {
-        window.speechSynthesis.cancel(); // Cancel ongoing speech
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        let targetLang = "en-IN";
-        if (langCode === "EN" || langCode === "en-IN") targetLang = "en-IN";
-        if (langCode === "HI" || langCode === "hi-IN") targetLang = "hi-IN";
-        if (langCode === "TE" || langCode === "te-IN") targetLang = "te-IN";
-
-        utterance.lang = targetLang;
-        utterance.rate = 0.95;
-        utterance.pitch = 1.0;
-
-        // Try to pick matching Indian voice if available in OS
-        const voices = window.speechSynthesis.getVoices();
-        const matchingVoice = voices.find(
-          (v) => v.lang === targetLang || v.lang.startsWith(targetLang.split("-")[0])
-        );
-        if (matchingVoice) {
-          utterance.voice = matchingVoice;
-        }
-
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onerror = () => setIsSpeaking(false);
-
-        window.speechSynthesis.speak(utterance);
-      } catch (e) {
-        console.warn("Error triggering speech synthesis:", e);
-        setIsSpeaking(false);
-      }
-    },
-    []
-  );
-
   return {
-    isListening,
-    transcript,
-    setTranscript,
+    start,
+    stop,
+    listening,
     supported,
-    isSpeaking,
-    speechNotice,
-    setSpeechNotice,
-    startListening,
-    stopListening,
-    speak,
+    error,
   };
+}
+
+/**
+ * Finds a matching voice installed on the device for the given language.
+ */
+export function getMatchingVoice(langCode: string): SpeechSynthesisVoice | null {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return null;
+  }
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return null;
+
+  const targetLocale = getLocale(langCode).toLowerCase(); // "en-in", "hi-in", "te-in"
+  const langPrefix = targetLocale.split("-")[0]; // "en", "hi", "te"
+
+  // 1. Exact match e.g. "te-in" or "hi-in"
+  const exact = voices.find(
+    (v) => v.lang.toLowerCase().replace("_", "-") === targetLocale
+  );
+  if (exact) return exact;
+
+  // 2. Prefix match e.g. "te" or "hi"
+  const prefix = voices.find((v) => {
+    const vLang = v.lang.toLowerCase().replace("_", "-");
+    return vLang.startsWith(langPrefix);
+  });
+  if (prefix) return prefix;
+
+  return null;
+}
+
+/**
+ * speak(text, lang)
+ * Returns false if the device has no voice for that language or if synthesis fails.
+ * Callers must pass already-translated text via t(), and show the same text as a toast when speak() returns false.
+ */
+export function speak(text: string, lang: string): boolean {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return false;
+  }
+
+  const matchingVoice = getMatchingVoice(lang);
+  if (!matchingVoice) {
+    // Crucial safety check: device has no voice for this language!
+    return false;
+  }
+
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.voice = matchingVoice;
+    utterance.lang = matchingVoice.lang;
+    utterance.rate = 0.95;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch (err) {
+    console.warn("Speech synthesis notice:", err);
+    return false;
+  }
 }

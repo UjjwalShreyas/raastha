@@ -25,6 +25,7 @@ import { useLocation } from "@/context/LocationContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { Button } from "@/components/ui/Button";
 import { HazardAnalysisResult } from "@/app/api/analyze-hazard/route";
+import { useRecognition, speak } from "@/hooks/useSpeech";
 
 // Self-contained embedded SVG images for presets (Zero CORS issues, Hyderabad themes)
 const PRESET_IMAGES: {
@@ -135,17 +136,16 @@ function compressImageToDataUrl(file: File): Promise<string> {
 
 export default function ReportWizardPage() {
   const router = useRouter();
-  const { language, voice, setVoiceMode, t } = useApp();
+  const { language, t, showToast } = useApp();
   const { addReportedIssue, isConfigured } = useIssues();
   const { coordinates, requestLocation, isReal } = useLocation();
 
-  // Set dictation mode on mount to avoid VoiceBar keyword interference, restore on unmount
-  useEffect(() => {
-    setVoiceMode("dictation");
-    return () => {
-      setVoiceMode("command");
-    };
-  }, [setVoiceMode]);
+  // Component owns its own dictation recognizer: only appends text to description, never navigates!
+  const dictation = useRecognition(language, {
+    onFinal: (text) => {
+      setDescription((prev) => (prev ? `${prev} ${text}` : text));
+    },
+  });
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -322,7 +322,10 @@ export default function ReportWizardPage() {
       });
 
       const successMsg = `${t("reportSuccess")} ${createdRow.tracking_id}`;
-      voice.speak(successMsg, language);
+      const spoke = speak(successMsg, language);
+      if (!spoke) {
+        showToast(successMsg);
+      }
 
       router.push("/my-reports");
     } catch (err: any) {
@@ -680,7 +683,7 @@ export default function ReportWizardPage() {
               </p>
             </div>
 
-            {/* Voice Dictation (In dictation mode, VoiceBar ignores commands) */}
+            {/* Voice Dictation (Dictation mode only appends text to description and never navigates) */}
             <div className="bg-[#FFECD1]/20 p-4 rounded-2xl border border-[#3E000C]/12 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-[#3E000C] flex items-center gap-1.5">
@@ -688,25 +691,30 @@ export default function ReportWizardPage() {
                   Voice Dictation ({language})
                 </span>
                 <Button
-                  variant={voice.isListening ? "danger" : "secondary"}
+                  variant={dictation.listening ? "danger" : "secondary"}
                   size="sm"
                   onClick={() => {
-                    if (voice.isListening) {
-                      voice.stopListening();
+                    if (dictation.listening) {
+                      dictation.stop();
                     } else {
-                      voice.startListening(language);
+                      dictation.start();
                     }
                   }}
                 >
-                  {voice.isListening ? "Stop Voice" : "Tap to Speak"}
+                  {dictation.listening ? "Stop Dictation" : "Tap to Speak"}
                 </Button>
               </div>
 
+              {dictation.error && (
+                <p className="text-xs text-red-700 bg-red-100/80 p-2 rounded-xl">
+                  {dictation.error}
+                </p>
+              )}
+
               <textarea
-                value={voice.transcript || description}
+                value={description}
                 onChange={(e) => {
                   setDescription(e.target.value);
-                  if (voice.setTranscript) voice.setTranscript(e.target.value);
                 }}
                 placeholder="Speak or type hazard details... (e.g. Deep pothole right near the bus stand causing traffic bottleneck)"
                 className="w-full bg-white border border-[#3E000C]/15 rounded-xl p-3 text-xs text-[#3E000C] focus:outline-none focus:border-[#3E000C]/50 h-20 resize-none placeholder:text-[#3E000C]/45"

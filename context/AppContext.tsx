@@ -1,8 +1,15 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+} from "react";
 import { TRANSLATIONS } from "@/lib/mockData";
-import { useSpeech } from "@/hooks/useSpeech";
+import { openSosSheet, closeSosSheet } from "@/lib/sosEvents";
 
 export type LanguageCode = "EN" | "HI" | "TE";
 
@@ -12,19 +19,16 @@ export interface AppContextType {
   setLanguage: (lang: LanguageCode) => void;
   t: (key: string) => string;
 
-  // Voice & Mode State
-  voice: ReturnType<typeof useSpeech>;
-  voiceMode: "command" | "dictation";
-  setVoiceMode: (mode: "command" | "dictation") => void;
-  voiceCommandToast: string | null;
-  setVoiceCommandToast: (msg: string | null) => void;
+  // Toast notification (used for speech fallback when voice is unavailable)
+  toast: string | null;
+  showToast: (msg: string) => void;
+  clearToast: () => void;
 
   // Authority Authentication Gate (passkey GHMC-2026)
   isOfficerAuthenticated: boolean;
   setOfficerAuthenticated: (val: boolean) => void;
 
-  // Emergency SOS State
-  sosActive: boolean;
+  // Emergency SOS trigger (opens local SOS sheet)
   triggerSOS: () => void;
   dismissSOS: () => void;
 
@@ -36,13 +40,9 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<LanguageCode>("EN");
-  const [voiceCommandToast, setVoiceCommandToast] = useState<string | null>(null);
-  const [sosActive, setSosActive] = useState<boolean>(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  // Voice Modes: 'command' (VoiceBar) vs 'dictation' (forms)
-  const [voiceMode, setVoiceMode] = useState<"command" | "dictation">("command");
-
-  // Authority Authentication Gate (passkey GHMC-2026)
+  // Authority Authentication Gate
   const [isOfficerAuthenticated, setOfficerAuthenticated] = useState<boolean>(false);
 
   // Network Connectivity State
@@ -62,8 +62,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const voice = useSpeech();
-
   const t = useCallback(
     (key: string): string => {
       const langDict = TRANSLATIONS[language] || TRANSLATIONS.EN;
@@ -72,21 +70,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [language]
   );
 
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => {
+      setToast((curr) => (curr === msg ? null : curr));
+    }, 4500);
+  }, []);
+
+  const clearToast = useCallback(() => {
+    setToast(null);
+  }, []);
+
   // Sync document html lang attribute with current language
   useEffect(() => {
     if (typeof document !== "undefined") {
-      document.documentElement.lang = language === "HI" ? "hi" : language === "TE" ? "te" : "en";
+      document.documentElement.lang =
+        language === "HI" ? "hi" : language === "TE" ? "te" : "en";
     }
   }, [language]);
 
-  const triggerSOS = () => {
-    setSosActive(true);
-    voice.speak(t("sosActivated"), language);
-  };
+  const triggerSOS = useCallback(() => {
+    openSosSheet();
+  }, []);
 
-  const dismissSOS = () => {
-    setSosActive(false);
-  };
+  const dismissSOS = useCallback(() => {
+    closeSosSheet();
+  }, []);
 
   return (
     <AppContext.Provider
@@ -94,14 +103,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         language,
         setLanguage,
         t,
-        voice,
-        voiceMode,
-        setVoiceMode,
-        voiceCommandToast,
-        setVoiceCommandToast,
+        toast,
+        showToast,
+        clearToast,
         isOfficerAuthenticated,
         setOfficerAuthenticated,
-        sosActive,
         triggerSOS,
         dismissSOS,
         isOnline,

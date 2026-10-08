@@ -20,7 +20,7 @@ import { useApp, LanguageCode } from "@/context/AppContext";
 
 export function Navbar() {
   const pathname = usePathname();
-  const { language, setLanguage, t, triggerSOS, sosActive, isOnline } = useApp();
+  const { language, setLanguage, t, triggerSOS, isOnline } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Home and Overview are now separate screens
@@ -103,11 +103,7 @@ export function Navbar() {
             {/* Minimalist SOS Trigger */}
             <button
               onClick={triggerSOS}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
-                sosActive
-                  ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] animate-pulse"
-                  : "bg-rose-950/10 border-rose-900/30 text-rose-900 hover:bg-rose-900/20"
-              }`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer bg-rose-950/10 border-rose-900/30 text-rose-900 hover:bg-rose-900/20"
             >
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>SOS</span>
