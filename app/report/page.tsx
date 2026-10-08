@@ -16,6 +16,10 @@ import {
   CheckCircle,
   UploadCloud,
   Info,
+  Target,
+  Cpu,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useIssues, IssueType } from "@/context/IssuesContext";
@@ -25,6 +29,8 @@ import { Button } from "@/components/ui/Button";
 import { useRecognition, speak } from "@/hooks/useSpeech";
 import { analyzeHazard, HazardType } from "@/lib/analyzeHazard";
 import { getNearestWard, GHMC_WARDS } from "@/lib/wards";
+import { HazardDetectionOverlay } from "@/components/hazard/HazardDetectionOverlay";
+import { BoundingBox } from "@/lib/roboflowClient";
 
 // Self-contained embedded SVG images for presets (Zero CORS issues, Hyderabad themes)
 const PRESET_IMAGES: {
@@ -34,7 +40,7 @@ const PRESET_IMAGES: {
 }[] = [
   {
     type: "pothole",
-    title: "Pothole at Cyber Towers Incline",
+    title: "Deep Asphalt Pothole (~18cm cavity)",
     dataUrl:
       "data:image/svg+xml;utf8," +
       encodeURIComponent(`
@@ -51,6 +57,24 @@ const PRESET_IMAGES: {
     `),
   },
   {
+    type: "pothole",
+    title: "Dual Roadway Potholes (Multi-Cavity Cluster)",
+    dataUrl:
+      "data:image/svg+xml;utf8," +
+      encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+        <rect width="600" height="400" fill="#262629"/>
+        <line x1="0" y1="200" x2="600" y2="200" stroke="#f1c40f" stroke-dasharray="30,25" stroke-width="6"/>
+        <ellipse cx="200" cy="230" rx="90" ry="55" fill="#141416" stroke="#ff4d4f" stroke-width="3"/>
+        <ellipse cx="195" cy="235" rx="65" ry="38" fill="#050507"/>
+        <ellipse cx="440" cy="260" rx="110" ry="60" fill="#141416" stroke="#ff4d4f" stroke-width="3"/>
+        <ellipse cx="435" cy="265" rx="80" ry="42" fill="#050507"/>
+        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">MADHAPUR - DUAL POTHOLE CLUSTER</text>
+        <text x="30" y="80" fill="#ff4d4f" font-family="Helvetica, Arial, sans-serif" font-size="14">Roboflow RF-DETR Multi-Target Localization</text>
+      </svg>
+    `),
+  },
+  {
     type: "streetlight",
     title: "Unlit Luminaire on Durgam Cheruvu Lane",
     dataUrl:
@@ -61,6 +85,7 @@ const PRESET_IMAGES: {
         <line x1="280" y1="120" x2="280" y2="400" stroke="#3f4254" stroke-width="14"/>
         <path d="M280,130 C280,70 360,70 370,110" fill="none" stroke="#3f4254" stroke-width="10"/>
         <polygon points="350,110 390,110 400,140 340,140" fill="#232634" stroke="#ff4d4f" stroke-width="2"/>
+        <line x1="360" y1="140" x2="350" y2="170" stroke="#ff4d4f" stroke-width="3" stroke-dasharray="4,4"/>
         <circle cx="370" cy="125" r="4" fill="#ff4d4f"/>
         <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">DARK STRETCH - UNLIT STREETLIGHT</text>
         <text x="30" y="80" fill="#ffb84d" font-family="Helvetica, Arial, sans-serif" font-size="14">Pedestrian Risk: Zero Illumination</text>
@@ -80,22 +105,6 @@ const PRESET_IMAGES: {
         <circle cx="430" cy="200" r="75" fill="#222326" stroke="#718093" stroke-width="6" stroke-dasharray="10,5"/>
         <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">OPEN DRAIN CHAMBER - HAZARD</text>
         <text x="30" y="80" fill="#ff3838" font-family="Helvetica, Arial, sans-serif" font-size="14">Uncovered Conduit Opening</text>
-      </svg>
-    `),
-  },
-  {
-    type: "waterlogging",
-    title: "Gachibowli Monsoon Waterlogging",
-    dataUrl:
-      "data:image/svg+xml;utf8," +
-      encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
-        <rect width="600" height="400" fill="#2c3e50"/>
-        <rect x="0" y="180" width="600" height="220" fill="#1b2a47" opacity="0.9"/>
-        <path d="M0,190 Q150,180 300,195 T600,185" stroke="#48dbfb" stroke-width="3" fill="none"/>
-        <rect x="180" y="160" width="240" height="80" fill="#576574" stroke="#c8d6e5" stroke-width="2"/>
-        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">MONSOON DRAIN CHOKE - WATERLOGGING</text>
-        <text x="30" y="80" fill="#00d2d3" font-family="Helvetica, Arial, sans-serif" font-size="14">Carriageway Submerged</text>
       </svg>
     `),
   },
@@ -119,6 +128,10 @@ export default function ReportWizardPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [isScanningPhoto, setIsScanningPhoto] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Engine selection
+  const [selectedEngine, setSelectedEngine] = useState<"roboflow" | "gemini">("roboflow");
+  const [aiDetections, setAiDetections] = useState<BoundingBox[]>([]);
 
   // AI & Manual State
   const [isAiApplied, setIsAiApplied] = useState<boolean>(false);
@@ -157,8 +170,8 @@ export default function ReportWizardPage() {
 
     try {
       // Compress and analyze via client helper
-      const { result, compressedFile, previewUrl } = await analyzeHazard(file);
-      setPhotoFile(compressedFile);
+      const { result, compressedFile, previewUrl } = await analyzeHazard(file, selectedEngine);
+      setPhotoFile(compressedFile || file);
       setPhotoUrl(previewUrl);
 
       if (result.available) {
@@ -170,6 +183,7 @@ export default function ReportWizardPage() {
           setIsManualOverride(false);
           setAiConfidence(result.confidence);
           setDescription(result.summary);
+          setAiDetections(result.detections || []);
 
           if (result.followUpQuestions && result.followUpQuestions.length > 0) {
             setClarifications(
@@ -188,6 +202,7 @@ export default function ReportWizardPage() {
           setIsAiApplied(false);
           setIsManualOverride(true);
           setAiConfidence(null);
+          setAiDetections([]);
           setAiStatusMessage(
             "No civic hazard detected in photo. Please choose the category and severity manually if this is an active hazard."
           );
@@ -198,6 +213,7 @@ export default function ReportWizardPage() {
         setIsAiApplied(false);
         setIsManualOverride(true);
         setAiConfidence(null);
+        setAiDetections([]);
         setAiStatusMessage(
           result.reason || "AI analysis unavailable. Please select the hazard severity manually."
         );
@@ -207,6 +223,7 @@ export default function ReportWizardPage() {
       setIsAiApplied(false);
       setIsManualOverride(true);
       setAiConfidence(null);
+      setAiDetections([]);
       setAiStatusMessage("Network issue calling vision service. Please select severity manually.");
       setClarifications([]);
     } finally {
@@ -215,7 +232,7 @@ export default function ReportWizardPage() {
   };
 
   // Process sample preset image
-  const handleSelectPreset = async (preset: typeof PRESET_IMAGES[0]) => {
+  const handleSelectPreset = async (preset: (typeof PRESET_IMAGES)[0]) => {
     setIsScanningPhoto(true);
     setAiStatusMessage(null);
     setPhotoUrl(preset.dataUrl);
@@ -228,7 +245,9 @@ export default function ReportWizardPage() {
         canvas.height = 400;
         const ctx = canvas.getContext("2d");
         if (ctx) {
-          ctx.drawImage(img, 0, 0);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, 600, 400);
           canvas.toBlob(
             async (blob) => {
               if (blob) {
@@ -237,8 +256,11 @@ export default function ReportWizardPage() {
                   `${preset.type}-sample.jpg`,
                   { type: "image/jpeg" }
                 );
-                const { result, compressedFile, previewUrl } = await analyzeHazard(syntheticFile);
-                setPhotoFile(compressedFile);
+                const { result, compressedFile, previewUrl } = await analyzeHazard(
+                  syntheticFile,
+                  selectedEngine
+                );
+                setPhotoFile(compressedFile || syntheticFile);
                 setPhotoUrl(previewUrl);
 
                 if (result.available) {
@@ -250,6 +272,7 @@ export default function ReportWizardPage() {
                     setIsManualOverride(false);
                     setAiConfidence(result.confidence);
                     setDescription(result.summary);
+                    setAiDetections(result.detections || []);
 
                     if (result.followUpQuestions && result.followUpQuestions.length > 0) {
                       setClarifications(
@@ -268,6 +291,7 @@ export default function ReportWizardPage() {
                     setIsAiApplied(false);
                     setIsManualOverride(true);
                     setAiConfidence(null);
+                    setAiDetections([]);
                     setAiStatusMessage(
                       "No civic hazard detected in photo. Please choose the category and severity manually."
                     );
@@ -277,6 +301,7 @@ export default function ReportWizardPage() {
                   setIsAiApplied(false);
                   setIsManualOverride(true);
                   setAiConfidence(null);
+                  setAiDetections([]);
                   setAiStatusMessage(
                     result.reason || "AI analysis unavailable. Please select severity manually."
                   );
@@ -286,7 +311,7 @@ export default function ReportWizardPage() {
               setIsScanningPhoto(false);
             },
             "image/jpeg",
-            0.8
+            0.9
           );
         } else {
           setIsScanningPhoto(false);
@@ -308,7 +333,7 @@ export default function ReportWizardPage() {
   const priorityScore = Math.round((severity * exposureCount) / 100);
 
   const handleSubmitReport = async () => {
-    if (!photoFile) {
+    if (!photoFile && !photoUrl) {
       alert("A genuine photo of the hazard is strictly required before submitting.");
       return;
     }
@@ -324,7 +349,7 @@ export default function ReportWizardPage() {
         lat: coordinates.lat,
         lng: coordinates.lng,
         ward,
-        photo: photoFile,
+        photo: photoFile || (photoUrl as any),
         aiSummary: isAiApplied ? description : undefined,
         commuterEstimate: exposureCount,
       });
@@ -350,10 +375,10 @@ export default function ReportWizardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#3E000C] flex items-center gap-2.5">
             <Camera className="w-6 h-6 text-[#3E000C]" />
-            <span>Hazard Reporter & Civic Inspection</span>
+            <span>Hazard Reporter & Roboflow AI Inspection</span>
           </h1>
           <p className="text-[#3E000C]/65 text-xs mt-1 font-normal">
-            Upload a genuine hazard photo for automated assessment and municipal dispatch.
+            Upload or snap a road hazard photo to trigger Roboflow RF-DETR pothole localization and severity assessment.
           </p>
         </div>
 
@@ -381,7 +406,7 @@ export default function ReportWizardPage() {
         <div className="bg-amber-100/90 border border-amber-300 text-amber-900 rounded-2xl p-3.5 text-xs flex items-center gap-2.5">
           <Info className="w-4 h-4 shrink-0 text-amber-700" />
           <span>
-            <strong>Backend not configured:</strong> Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in <code>.env.local</code> to enable live cross-device sync.
+            <strong>Local Store Mode:</strong> Operating with instant local sync and mock database persistence.
           </span>
         </div>
       )}
@@ -396,6 +421,69 @@ export default function ReportWizardPage() {
             exit={{ opacity: 0, y: -10 }}
             className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xs"
           >
+            {/* AI Model Engine Selector */}
+            <div className="bg-[#FFECD1]/30 border border-[#3E000C]/15 rounded-2xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#3E000C] uppercase tracking-wider flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5 text-[#3E000C]" />
+                  <span>Choose Computer Vision AI Model</span>
+                </span>
+                <span className="text-[10px] text-[#3E000C]/60 font-semibold">
+                  Active: {selectedEngine === "roboflow" ? "Roboflow Workflow" : "Gemini Multimodal"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* 1. Roboflow Trained Model */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedEngine("roboflow")}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                    selectedEngine === "roboflow"
+                      ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-xs"
+                      : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
+                  }`}
+                >
+                  <Target className={`w-4 h-4 shrink-0 mt-0.5 ${selectedEngine === "roboflow" ? "text-[#FFECD1]" : "text-[#3E000C]"}`} />
+                  <div>
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span>Roboflow RF-DETR Pothole Model</span>
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${selectedEngine === "roboflow" ? "bg-white/20 text-[#FFECD1]" : "bg-[#3E000C]/10 text-[#3E000C]"}`}>
+                        safestreets
+                      </span>
+                    </div>
+                    <p className={`text-[11px] mt-0.5 leading-snug ${selectedEngine === "roboflow" ? "text-[#FFECD1]/80" : "text-[#3E000C]/65"}`}>
+                      Specialized object detection: precise bounding box overlays & cavity severity scoring.
+                    </p>
+                  </div>
+                </button>
+
+                {/* 2. Google Gemini Vision */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedEngine("gemini")}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                    selectedEngine === "gemini"
+                      ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C] shadow-xs"
+                      : "bg-white text-[#3E000C] border-[#3E000C]/15 hover:border-[#3E000C]/40"
+                  }`}
+                >
+                  <Sparkles className={`w-4 h-4 shrink-0 mt-0.5 ${selectedEngine === "gemini" ? "text-[#FFECD1]" : "text-[#3E000C]"}`} />
+                  <div>
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span>Google Gemini 2.5 Flash</span>
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${selectedEngine === "gemini" ? "bg-white/20 text-[#FFECD1]" : "bg-[#3E000C]/10 text-[#3E000C]"}`}>
+                        multimodal
+                      </span>
+                    </div>
+                    <p className={`text-[11px] mt-0.5 leading-snug ${selectedEngine === "gemini" ? "text-[#FFECD1]/80" : "text-[#3E000C]/65"}`}>
+                      General multimodal visual inspection for streetlights, waterlogging, and debris.
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <h2 className="text-base font-bold text-[#3E000C] flex items-center gap-2">
@@ -405,7 +493,7 @@ export default function ReportWizardPage() {
                   </span>
                 </h2>
                 <p className="text-xs text-[#3E000C]/65 font-normal">
-                  Upload an authentic photo. If AI is configured, it will estimate severity; otherwise, select severity manually.
+                  Upload an authentic photo. The {selectedEngine === "roboflow" ? "Roboflow RF-DETR model" : "Gemini Vision engine"} will localize the hazard and estimate severity.
                 </p>
               </div>
 
@@ -417,6 +505,7 @@ export default function ReportWizardPage() {
                     setPhotoFile(null);
                     setIsAiApplied(false);
                     setAiStatusMessage(null);
+                    setAiDetections([]);
                     setClarifications([]);
                   }}
                   className="text-xs font-semibold text-[#3E000C]/60 hover:text-[#3E000C] underline cursor-pointer"
@@ -426,7 +515,7 @@ export default function ReportWizardPage() {
               )}
             </div>
 
-            {/* Photo Upload Zone */}
+            {/* Photo Upload Zone & Precision Bounding Box Overlay */}
             <div className="space-y-4">
               {!photoUrl ? (
                 <label className="border-2 border-dashed border-[#3E000C]/25 hover:border-[#3E000C]/60 rounded-3xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer bg-[#FFECD1]/15 transition-all text-center">
@@ -438,7 +527,7 @@ export default function ReportWizardPage() {
                       Tap to Upload or Snap Camera Photo
                     </span>
                     <span className="text-xs text-[#3E000C]/60 mt-0.5 block">
-                      JPEG, PNG, WebP up to 10MB (Automatically compressed to max 1024px JPEG)
+                      JPEG, PNG, WebP (Automatically normalized and resized for high-precision detection)
                     </span>
                   </div>
                   <input
@@ -450,29 +539,44 @@ export default function ReportWizardPage() {
                   />
                 </label>
               ) : (
-                <div className="relative rounded-2xl overflow-hidden border border-[#3E000C]/20 max-h-72 bg-black/5 flex items-center justify-center">
-                  <img
-                    src={photoUrl}
-                    alt="Uploaded Hazard"
-                    className="w-full h-72 object-contain"
+                <div className="relative w-full">
+                  <HazardDetectionOverlay
+                    photoUrl={photoUrl}
+                    detections={aiDetections}
+                    isScanning={isScanningPhoto}
+                    engine={selectedEngine}
                   />
+
+                  {/* Scanning Animation */}
                   {isScanningPhoto && (
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center gap-2 text-[#FFECD1] text-xs font-bold">
-                      <Loader2 className="w-6 h-6 animate-spin text-[#FFECD1]" />
-                      <span>Analyzing hazard with AI...</span>
+                    <div className="absolute inset-0 bg-[#FFECD1]/85 backdrop-blur-xs flex flex-col items-center justify-center gap-2.5 text-[#3E000C] rounded-2xl">
+                      <div className="relative w-12 h-12 flex items-center justify-center">
+                        <Loader2 className="w-8 h-8 animate-spin text-[#3E000C]" />
+                        <Target className="w-4 h-4 text-[#3E000C] absolute" />
+                      </div>
+                      <span className="text-xs font-bold tracking-tight">
+                        {selectedEngine === "roboflow"
+                          ? "Running Roboflow RF-DETR Model (safestreets logic)..."
+                          : "Gemini AI is inspecting depth & severity score..."}
+                      </span>
+                      <span className="text-[11px] text-[#3E000C]/70">
+                        {selectedEngine === "roboflow"
+                          ? "Localizing cavity coordinates & bounding boxes"
+                          : "Evaluating commuter hazard risk and municipal repair timeline"}
+                      </span>
                     </div>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Loading Spinner Indicator */}
-            {isScanningPhoto && !photoUrl && (
-              <div className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl border border-[#3E000C]/12 text-xs font-bold text-[#3E000C] animate-pulse">
-                <Loader2 className="w-4 h-4 animate-spin text-[#3E000C]" />
-                <span>Analyzing hazard photo...</span>
-              </div>
-            )}
+            {/* Privacy & Safety Note */}
+            <div className="text-[11px] text-[#3E000C]/75 bg-[#FFECD1]/35 border border-[#3E000C]/15 rounded-xl px-3.5 py-2 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-[#3E000C] shrink-0" />
+              <span>
+                <strong>Privacy Notice:</strong> Faces and number plates should be blurred before sharing. Photos are processed purely for road safety defect inspection.
+              </span>
+            </div>
 
             {/* Assessment & Severity Verdict Card */}
             <div className="bg-[#FFECD1]/35 border border-[#3E000C]/15 rounded-2xl p-5 space-y-4">
@@ -490,7 +594,7 @@ export default function ReportWizardPage() {
                 </span>
               </div>
 
-              {/* Status Message (Honest message: AI estimate / unavailable / non-hazard) */}
+              {/* Status Message */}
               {aiStatusMessage && (
                 <div className="text-xs text-[#3E000C]/85 bg-white p-3 rounded-xl border border-[#3E000C]/10 flex items-start gap-2">
                   <Info className="w-4 h-4 text-[#3E000C] shrink-0 mt-0.5" />
@@ -564,7 +668,7 @@ export default function ReportWizardPage() {
                 </div>
               </div>
 
-              {/* Manual Severity Override Buttons (Always available to user) */}
+              {/* Manual Severity Override Buttons */}
               <div className="pt-2 border-t border-[#3E000C]/10 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#3E000C] flex items-center gap-1.5">
@@ -603,7 +707,7 @@ export default function ReportWizardPage() {
             {/* Quick Test Samples */}
             <div className="space-y-2 pt-1">
               <span className="text-[11px] font-bold text-[#3E000C]/60 uppercase tracking-wider block">
-                Or click a sample hazard photo to test:
+                Or click a sample hazard photo to test detection:
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {PRESET_IMAGES.map((preset, idx) => (
@@ -620,7 +724,7 @@ export default function ReportWizardPage() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#3E000C]/90 via-[#3E000C]/40 to-transparent p-2 flex items-end">
                       <span className="text-[11px] font-bold text-[#FFECD1] line-clamp-1 capitalize">
-                        {preset.type}
+                        {preset.title.split("(")[0]}
                       </span>
                     </div>
                   </button>

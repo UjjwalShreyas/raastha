@@ -15,34 +15,54 @@ export type {
 
 export interface AnalyzeHazardClientResult {
   result: AnalyzeHazardResponse;
-  compressedFile: File;
+  compressedFile?: File;
   previewUrl: string;
 }
 
 /**
- * Compresses an image File (max 1024px, JPEG 0.7), sends it to /api/analyze-hazard,
- * and returns the analysis response along with the exact compressed File.
+ * Compresses an image File (max 1024px, JPEG 0.85), sends it to /api/analyze-hazard,
+ * and returns the analysis response along with the exact compressed File and preview URL.
  */
-export async function analyzeHazard(rawFile: File): Promise<AnalyzeHazardClientResult> {
-  // 1. Client-side compression
-  const compressed = await compressImage(rawFile, 1024, 0.7);
+export async function analyzeHazard(
+  input: File | { base64: string; mimeType?: string },
+  preferredEngine: "roboflow" | "gemini" = "roboflow"
+): Promise<AnalyzeHazardClientResult> {
+  let imageBase64: string;
+  let mimeType: string = "image/jpeg";
+  let compressedFile: File | undefined;
+  let previewUrl: string;
 
-  // 2. Call server route
+  if (input instanceof File) {
+    const compressed = await compressImage(input, 1024, 0.85);
+    imageBase64 = compressed.base64;
+    mimeType = "image/jpeg";
+    compressedFile = compressed.file;
+    previewUrl = compressed.dataUrl;
+  } else {
+    imageBase64 = input.base64;
+    mimeType = input.mimeType || "image/jpeg";
+    previewUrl = input.base64.startsWith("data:")
+      ? input.base64
+      : `data:${mimeType};base64,${input.base64}`;
+  }
+
+  // Call server route
   try {
     const res = await fetch("/api/analyze-hazard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        imageBase64: compressed.base64,
-        mimeType: "image/jpeg",
+        imageBase64,
+        mimeType,
+        preferredEngine,
       }),
     });
 
     const data: AnalyzeHazardResponse = await res.json();
     return {
       result: data,
-      compressedFile: compressed.file,
-      previewUrl: compressed.dataUrl,
+      compressedFile,
+      previewUrl,
     };
   } catch (err: any) {
     return {
@@ -51,8 +71,8 @@ export async function analyzeHazard(rawFile: File): Promise<AnalyzeHazardClientR
         reason:
           err?.message || "Network error while connecting to hazard analysis service.",
       },
-      compressedFile: compressed.file,
-      previewUrl: compressed.dataUrl,
+      compressedFile,
+      previewUrl,
     };
   }
 }
