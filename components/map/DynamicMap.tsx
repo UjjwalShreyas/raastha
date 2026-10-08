@@ -9,9 +9,9 @@ import type { MapProps } from "./LeafletInnerMap";
 const LeafletMap = dynamic(() => import("./LeafletInnerMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full min-h-[350px] bg-slate-900 border border-slate-800 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-3">
-      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      <span className="text-sm font-medium">Loading Civic Safety Map tiles...</span>
+    <div className="w-full h-full min-h-[350px] bg-[#FFECD1]/40 border border-[#3E000C]/15 rounded-2xl flex flex-col items-center justify-center text-[#3E000C] gap-3">
+      <Loader2 className="w-7 h-7 animate-spin text-[#3E000C]" />
+      <span className="text-xs font-semibold">Loading Civic Safety Map tiles...</span>
     </div>
   ),
 });

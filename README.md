@@ -1,61 +1,117 @@
 # Raastha (रास्ता) 🛣️
-### Voice-First Civic Safety & Safe Corridor Navigation Platform
-
-Raastha is a civic safety and municipal hazard dispatch web application designed for urban commuters, pedestrians, and city ward authorities. It features automated AI vision inspection for road hazards (such as potholes, open manholes, and defective streetlights) powered by Google Gemini Vision.
-
----
-
-## ✨ Key Features
-
-- **Gemini AI Vision Hazard Inspector**: Upload or snap a roadway defect photo. Google's Gemini Vision API calculates the cavity depth, assigns a severity score (Level 1–5), determines whether it strictly requires urgent civic repair, and generates engineering impact assessments.
-- **Manual Severity Override**: Complete manual adjustment support (Levels 1–5) in case of poor lighting or custom civic evaluation.
-- **Multilingual Voice Navigation & Dictation**: Real-time voice assistance and hazard reporting in English, Hindi, and Telugu with text-to-speech audio guidance.
-- **Safe Lighted Corridor Routing**: Real-time GPS pathfinding optimized for well-lit streets, verified CCTV coverage, and high-footfall routes.
-- **Ward Officer Municipal Dispatch Queue**: Exposure-weighted ranking formula `(Severity × Daily Commuters) / 100` with SLA timers for rapid municipal crew action.
-- **Before / After Verification**: Citizen verification portal to review municipal asphalt repair proofs.
-- **Emergency SOS Broadcast**: Instant one-tap location broadcasting to emergency contacts and direct dial action.
-- **Minimalist Aesthetic**: Sand (`#FFECD1`) & Chocolate (`#3E000C`) color palette with Helvetica typography.
+> **Voice-First Civic Safety & Safe Corridor Navigation Platform**  
+> *Report road hazards with voice or camera, navigate streetlit corridors, and auto-dispatch municipal repair units with exposure-weighted prioritization.*
 
 ---
 
-## 🚀 Getting Started
+## ⚡ The One-Line Pitch
+Raastha empowers citizens to report street hazards in seconds using multilingual voice or photos evaluated by Google Gemini Vision, navigates pedestrians along streetlit corridors using OSRM, and routes municipal response crews via an exposure-weighted priority queue.
 
-### 1. Clone the repository
+---
+
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    A[Citizen Mobile / Web App] -->|Multilingual Voice EN/HI/TE| B(Voice Engine - Web Speech API)
+    A -->|Upload Pothole / Hazard Photo| C[Server Route: /api/analyze-hazard]
+    C -->|Multimodal Image Inspection| D[Google Gemini 3.5 Flash Vision]
+    D -->|Severity 1-5 + Repair Verdict| C
+    C -->|Verified Hazard JSON| E[(Shared Backend / Supabase & Server Store)]
+    
+    E -->|Live Polling & Audio Chime| F[Ward Authority Command Portal]
+    F -->|30m Duplicate Clustering| G[Incident Prioritization Queue]
+    F -->|Upload Repair Proof| H[Server Route: /api/verify-fix]
+    H -->|Before vs After Audit| D
+    
+    A -->|Route Request| I[OSRM Pathfinding Engine]
+    I -->|Alternative Geometric Paths| J[Safety Re-ranking Engine]
+    E -->|Live Hazards Proximity Penalty| J
+    J -->|Recommended Safe Lighted Corridor| A
+```
+
+---
+
+## ✨ Core Features & Technical Implementation
+
+### 1. Gemini AI Hazard Vision Inspector
+- **Severity Estimation (Levels 1–5)**: Instead of claiming impossible single-photo depth measurement, Gemini estimates surface defect severity, commuters at risk, and whether the hazard strictly requires municipal repair (`needsFixing: boolean`).
+- **Zero-Crash Fallback**: Includes immediate manual severity override buttons (Levels 1–5) and intelligent civil engineering heuristics if the API key is absent or network is degraded.
+
+### 2. OSRM Dynamic Routing & Safety Re-ranking
+- Computes real-time geometric routes between GPS coordinates using the Open Source Routing Machine (OSRM) driving/walking engine.
+- **Safety Re-Ranking Formula**:
+  $$\text{Safety Score} = 95 - \sum (\text{Severity}_i \times 5) \quad \text{for hazards within 60m of route}$$
+- Generates turn-by-turn directions and audible voice guidance.
+
+### 3. Ward Authority Queue & 30m Duplicate Clustering
+- **30-Meter Proximity Clustering**: If a citizen reports a hazard within 30 meters of an existing active incident of the same type, Raastha clusters it into a single ticket, increments confirmation count, and recalculates commuter exposure.
+- **Exposure Priority Formula**:
+  $$\text{Priority Score} = \frac{\text{Severity (1–5)} \times \text{Daily Commuter Exposure Proxy}}{100}$$
+- **Real-Time Notifications**: When a new Level 4 or 5 hazard is detected, the authority dashboard triggers an audible Web Audio chime, toast banner, and red alert badge.
+
+### 4. AI Before vs After Fix Verification
+- When municipal contractors complete roadwork, authorities upload an "After" photo.
+- Gemini Vision audits the before-and-after pair to verify asphalt leveling and compaction before closing the ticket.
+
+### 5. Mobile Emergency SOS Broadcast
+- Real-time GPS coordinate lock.
+- Instant dispatch via **WhatsApp deep link**, **SMS URI (`sms:?body=...`)**, **Web Share API (`navigator.share`)**, and direct one-tap call to **112 / 1091**.
+
+---
+
+## 📊 Honest Scope & Limitations
+
+| Feature | Current Implementation | Honest Production Scope |
+| :--- | :--- | :--- |
+| **Hazard Severity** | Gemini estimates visual severity (1–5) based on surface cavitation and rubble spread. | Single-photo depth estimation is an approximation; lidar/depth sensors would be needed for millimeter depth. |
+| **Daily Commuters** | Documented proxy based on road classification (arterial: 3500+, secondary: 1500, residential: 500). | In full production, this would integrate with municipal traffic sensors or bus transit ridership data. |
+| **Street Lighting** | Modeled arterial corridor LUX indices (80ft & 100ft arterial roads vs inner lanes). | Replaces unverified CCTV claims with tangible illumination proxies. |
+| **Voice Engine** | Web Speech API with automatic typed search fallback for unsupported browsers. | Native Android/iOS apps would embed on-device whisper models for offline multilingual recognition. |
+| **Backend Sync** | Dual-tier: Supabase client ready, backed by a persistent multi-device server store. | Works out-of-the-box on local dev and Vercel without mandatory Supabase provisioning. |
+
+---
+
+## 🚀 Quickstart & Demo Script
+
+### 1. Installation
 ```bash
 git clone https://github.com/UjjwalShreyas/raastha.git
 cd raastha
-```
-
-### 2. Install dependencies
-```bash
 npm install
 ```
 
-### 3. Configure Environment Variables
+### 2. Environment Variables
 Copy `.env.example` to `.env.local`:
 ```bash
 cp .env.example .env.local
 ```
 
-Add your Gemini API key in `.env.local`:
+Add your Google Gemini API key:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-### 4. Run Development Server
+### 3. Launch Development Server
 ```bash
 npm run dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## 🛠️ Tech Stack
+## 🎭 1-Minute Judge Demo Script
 
-- **Framework**: Next.js 16 (App Router & Turbopack)
-- **Styling**: Tailwind CSS & Vanilla CSS Design System
-- **Mapping**: Leaflet & React-Leaflet (OpenStreetMap)
-- **AI Vision**: Google Gemini 3.5 / 2.5 Flash Vision Multimodal API
-- **Icons & Motion**: Lucide React & Framer Motion
-- **Typography**: Helvetica / Helvetica Neue
+1. **Citizen Home (`/`)**:
+   - Tap the microphone button or type a voice prompt in Hindi, Telugu, or English.
+   - Observe the streamlined 3-button citizen layout (Report, Safe Route, My Reports).
+2. **Hazard Reporter (`/report`)**:
+   - Click **"Test Demo Pothole"** (or upload any road photo).
+   - Watch Gemini Vision diagnose cavity depth, return **Severity 4/5**, mark **"Strictly Needs Fixing"**, and preview the manual override controls.
+   - Submit report.
+3. **Safe Corridor Navigation (`/route`)**:
+   - Select destination.
+   - View live OSRM routes comparing the **Safe Illuminated Corridor (Safety: 94/100)** vs **Shortcut (Safety: 68/100)** with turn-by-turn guidance.
+4. **Ward Command Dashboard (`/admin`)**:
+   - Open `/admin` in a new tab.
+   - Notice the exposure-weighted priority queue, live audio chime, 30m duplicate clustering badge, and test the **"Verify & Resolve Fix with AI"** modal.

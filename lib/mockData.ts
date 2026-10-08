@@ -29,6 +29,8 @@ export interface HazardIssue {
     answer?: string;
   }[];
   resolutionNotes?: string;
+  confirmationsCount?: number;
+  isClustered?: boolean;
 }
 
 export interface RouteOption {
@@ -285,11 +287,36 @@ export const MOCK_CITIZEN_HISTORY: HazardIssue[] = [
   MOCK_ISSUES[5],
 ];
 
-export const MOCK_DESTINATIONS = [
-  { name: "Indiranagar Metro Station", address: "100 Ft Road, Indiranagar", distance: "2.4 km" },
-  { name: "Koramangala Social / 7th Block", address: "80 Feet Rd, 7th Block", distance: "1.1 km" },
-  { name: "St. John's Medical College Hospital", address: "Sarjapur Main Road", distance: "1.8 km" },
-  { name: "RMZ Ecospace Tech Park Gate 2", address: "Outer Ring Road, Bellandur", distance: "4.5 km" },
+export const MOCK_DESTINATIONS: {
+  name: string;
+  address: string;
+  distance: string;
+  coordinates: [number, number];
+}[] = [
+  {
+    name: "Indiranagar Metro Station",
+    address: "100 Ft Road, Indiranagar",
+    distance: "2.4 km",
+    coordinates: [12.9784, 77.6408],
+  },
+  {
+    name: "Koramangala Social / 7th Block",
+    address: "80 Feet Rd, 7th Block",
+    distance: "1.1 km",
+    coordinates: [12.9345, 77.6189],
+  },
+  {
+    name: "St. John's Medical College Hospital",
+    address: "Sarjapur Main Road",
+    distance: "1.8 km",
+    coordinates: [12.9298, 77.6206],
+  },
+  {
+    name: "RMZ Ecospace Tech Park Gate 2",
+    address: "Outer Ring Road, Bellandur",
+    distance: "4.5 km",
+    coordinates: [12.926, 77.6833],
+  },
 ];
 
 export const TRANSLATIONS: Record<string, Record<string, string>> = {

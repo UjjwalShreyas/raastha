@@ -1,224 +1,227 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   Mic,
   Camera,
   Navigation,
-  ShieldCheck,
-  Clock,
+  FileText,
+  ShieldAlert,
   ArrowRight,
-  TrendingUp,
-  Users,
-  CheckCircle2,
-  MapPin,
+  Globe,
+  Keyboard,
+  Send,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { Button } from "@/components/ui/Button";
 
 export default function Home() {
-  const { t, voice } = useApp();
+  const { language, setLanguage, voice, triggerSOS } = useApp();
+  const [typedInput, setTypedInput] = useState<string>("");
+  const [isTypingFallbackOpen, setIsTypingFallbackOpen] = useState<boolean>(false);
+
+  const handleVoiceToggle = () => {
+    if (voice.isListening) {
+      voice.stopListening();
+    } else {
+      voice.startListening(language);
+    }
+  };
+
+  const handleTypedSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!typedInput.trim()) return;
+    voice.speak(`Received instruction: ${typedInput}`, language);
+    setTypedInput("");
+    setIsTypingFallbackOpen(false);
+  };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-16 space-y-12">
-      {/* Editorial Minimalist Hero Section */}
-      <section className="relative overflow-hidden rounded-3xl bg-[#FFFFFF]/75 border border-[#3E000C]/12 p-8 sm:p-14 shadow-xs">
-        <div className="relative z-10 max-w-2xl space-y-5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#3E000C]/8 border border-[#3E000C]/15 text-[#3E000C] text-xs font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#3E000C]" />
-            <span>Voice-first civic safety & navigation</span>
-          </div>
+    <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12 space-y-8 font-sans">
+      {/* Top Utility Bar: Language Switcher & Emergency SOS */}
+      <div className="flex items-center justify-between bg-white/70 backdrop-blur-xs p-2.5 rounded-2xl border border-[#3E000C]/12 shadow-2xs">
+        {/* Language Switch */}
+        <div className="flex items-center gap-1.5">
+          <Globe className="w-3.5 h-3.5 text-[#3E000C]/60 ml-2" />
+          {(["EN", "HI", "TE"] as const).map((lang) => (
+            <button
+              key={lang}
+              onClick={() => setLanguage(lang)}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                language === lang
+                  ? "bg-[#3E000C] text-[#FFECD1] shadow-2xs"
+                  : "text-[#3E000C]/70 hover:bg-[#3E000C]/8"
+              }`}
+            >
+              {lang === "EN" ? "English" : lang === "HI" ? "हिंदी" : "తెలుగు"}
+            </button>
+          ))}
+        </div>
 
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-[#3E000C] leading-tight">
-            Speak. Navigate safely. <br className="hidden sm:inline" />
-            <span className="opacity-80 font-medium">Fix your city with ease.</span>
+        {/* Instant SOS Button */}
+        <button
+          onClick={triggerSOS}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>SOS</span>
+        </button>
+      </div>
+
+      {/* Hero Voice Centerpiece */}
+      <div className="text-center space-y-5 py-4">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-black text-[#3E000C] tracking-tight">
+            Raastha
           </h1>
-
-          <p className="text-sm sm:text-base text-[#3E000C]/75 font-normal leading-relaxed">
-            Report road hazards, potholes and dark spots with natural voice in Hindi, Telugu or English — and navigate AI-verified illuminated corridors.
+          <p className="text-xs sm:text-sm text-[#3E000C]/70 font-normal mt-1">
+            Tap the mic to report a hazard or find a safe route in your language
           </p>
+        </div>
 
-          {/* Clean Voice Command Suggestion Chips */}
-          <div className="pt-1 space-y-2">
-            <span className="text-[11px] font-semibold text-[#3E000C]/50 uppercase tracking-wider block">
-              Suggested voice prompts:
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { text: "Report deep pothole on 80 Feet Rd", lang: "EN" },
-                { text: "गड्ढे की शिकायत दर्ज करें", lang: "HI" },
-                { text: "సురక్షితమైన మార్గం చూపించు", lang: "TE" },
-                { text: "Find safest route corridor", lang: "EN" },
-              ].map((cmd, i) => (
-                <button
-                  key={i}
-                  onClick={() => voice.speak(cmd.text, cmd.lang)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FFFFFF] hover:bg-[#3E000C]/5 border border-[#3E000C]/15 text-xs font-medium text-[#3E000C] transition-colors cursor-pointer shadow-2xs"
-                >
-                  <Mic className="w-3 h-3 text-[#3E000C]" />
-                  <span>"{cmd.text}"</span>
-                </button>
-              ))}
-            </div>
+        {/* Big Interactive Microphone Button */}
+        <div className="flex flex-col items-center justify-center pt-2">
+          <div className="relative">
+            {voice.isListening && (
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0.8 }}
+                animate={{ scale: 1.35, opacity: 0 }}
+                transition={{ repeat: Infinity, duration: 1.4, ease: "easeOut" }}
+                className="absolute inset-0 rounded-full bg-[#3E000C]/25"
+              />
+            )}
+
+            <button
+              type="button"
+              onClick={handleVoiceToggle}
+              className={`relative z-10 w-24 h-24 sm:w-28 sm:h-28 rounded-full flex flex-col items-center justify-center transition-all duration-300 shadow-xl cursor-pointer ${
+                voice.isListening
+                  ? "bg-red-700 text-white ring-4 ring-red-300 scale-105"
+                  : "bg-[#3E000C] text-[#FFECD1] hover:scale-102 hover:shadow-2xl"
+              }`}
+            >
+              <Mic className={`w-10 h-10 ${voice.isListening ? "animate-pulse" : ""}`} />
+            </button>
           </div>
 
-          {/* Primary Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-3 pt-3">
-            <Link href="/report">
-              <Button
-                variant="primary"
-                size="lg"
-                className="w-full sm:w-auto"
-                leftIcon={<Camera className="w-4 h-4 text-[#FFECD1]" />}
-                rightIcon={<ArrowRight className="w-4 h-4" />}
-              >
-                {t("reportProblem")}
-              </Button>
-            </Link>
+          <div className="mt-3 text-center">
+            <span className="text-xs font-bold text-[#3E000C]">
+              {voice.isListening ? "Listening in " + language + "... Speak now" : "Tap to Speak"}
+            </span>
+            {voice.transcript && (
+              <p className="text-xs text-[#3E000C]/80 bg-white/80 border border-[#3E000C]/12 px-3 py-1.5 rounded-xl mt-2 max-w-sm mx-auto font-medium">
+                "{voice.transcript}"
+              </p>
+            )}
+          </div>
 
-            <Link href="/route">
-              <Button
-                variant="secondary"
-                size="lg"
-                className="w-full sm:w-auto"
-                leftIcon={<Navigation className="w-4 h-4 text-[#3E000C]" />}
-              >
-                {t("safeRoute")}
-              </Button>
-            </Link>
+          {/* Visible Typed Fallback toggle (for browsers/devices without speech recognition) */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setIsTypingFallbackOpen(!isTypingFallbackOpen)}
+              className="text-[11px] font-semibold text-[#3E000C]/65 hover:text-[#3E000C] underline cursor-pointer flex items-center gap-1 mx-auto"
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              <span>{isTypingFallbackOpen ? "Hide Text Input" : "Prefer typing? Use text fallback"}</span>
+            </button>
 
-            <Link href="/overview">
-              <Button
-                variant="outline"
-                size="lg"
-                className="w-full sm:w-auto"
-                leftIcon={<MapPin className="w-4 h-4 text-[#3E000C]" />}
-              >
-                Explore Overview Radar
-              </Button>
-            </Link>
+            {isTypingFallbackOpen && (
+              <form onSubmit={handleTypedSubmit} className="flex gap-2 mt-2 max-w-sm mx-auto">
+                <input
+                  type="text"
+                  value={typedInput}
+                  onChange={(e) => setTypedInput(e.target.value)}
+                  placeholder="Type hazard or destination..."
+                  className="flex-1 bg-white border border-[#3E000C]/20 rounded-xl px-3 py-1.5 text-xs text-[#3E000C] focus:outline-none focus:border-[#3E000C]"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-[#3E000C] text-[#FFECD1] rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            )}
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* Feature Cards Grid (4 Essential Actions) */}
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Overview Radar */}
-        <motion.div
-          whileHover={{ y: -2 }}
-          transition={{ duration: 0.15 }}
-          className="bg-[#FFFFFF]/75 border border-[#3E000C]/12 rounded-2xl p-5 flex flex-col justify-between hover:border-[#3E000C]/30 transition-colors shadow-2xs"
-        >
-          <div className="space-y-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#3E000C]/8 border border-[#3E000C]/15 flex items-center justify-center text-[#3E000C]">
-              <MapPin className="w-4.5 h-4.5" />
-            </div>
-            <h3 className="text-sm font-bold text-[#3E000C]">Civic Overview Radar</h3>
-            <p className="text-[#3E000C]/70 text-xs leading-relaxed">
-              Explore live ward hazard clusters, verified safe corridors, and real-time community reports.
-            </p>
-          </div>
-          <Link href="/overview" className="pt-4">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3E000C] hover:underline underline-offset-4">
-              Open Overview <ArrowRight className="w-3.5 h-3.5" />
-            </span>
-          </Link>
-        </motion.div>
-
-        {/* Card 2: AI Hazard Reporting */}
-        <motion.div
-          whileHover={{ y: -2 }}
-          transition={{ duration: 0.15 }}
-          className="bg-[#FFFFFF]/75 border border-[#3E000C]/12 rounded-2xl p-5 flex flex-col justify-between hover:border-[#3E000C]/30 transition-colors shadow-2xs"
-        >
-          <div className="space-y-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#3E000C]/8 border border-[#3E000C]/15 flex items-center justify-center text-[#3E000C]">
-              <Camera className="w-4.5 h-4.5" />
-            </div>
-            <h3 className="text-sm font-bold text-[#3E000C]">AI Hazard Reporting</h3>
-            <p className="text-[#3E000C]/70 text-xs leading-relaxed">
-              Snap a photo or speak in local languages. Automated vision analysis estimates depth and commuter impact.
-            </p>
-          </div>
-          <Link href="/report" className="pt-4">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3E000C] hover:underline underline-offset-4">
-              Report Hazard <ArrowRight className="w-3.5 h-3.5" />
-            </span>
-          </Link>
-        </motion.div>
-
-        {/* Card 3: Safe Corridor Navigation */}
-        <motion.div
-          whileHover={{ y: -2 }}
-          transition={{ duration: 0.15 }}
-          className="bg-[#FFFFFF]/75 border border-[#3E000C]/12 rounded-2xl p-5 flex flex-col justify-between hover:border-[#3E000C]/30 transition-colors shadow-2xs"
-        >
-          <div className="space-y-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#3E000C]/8 border border-[#3E000C]/15 flex items-center justify-center text-[#3E000C]">
-              <ShieldCheck className="w-4.5 h-4.5" />
-            </div>
-            <h3 className="text-sm font-bold text-[#3E000C]">Safe Navigation</h3>
-            <p className="text-[#3E000C]/70 text-xs leading-relaxed">
-              Real-time routing prioritizing high-LUX streetlight illumination, active CCTV corridors, and avoiding unlit paths.
-            </p>
-          </div>
-          <Link href="/route" className="pt-4">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3E000C] hover:underline underline-offset-4">
-              Plan Route <ArrowRight className="w-3.5 h-3.5" />
-            </span>
-          </Link>
-        </motion.div>
-
-        {/* Card 4: Official Ward Dispatch */}
-        <motion.div
-          whileHover={{ y: -2 }}
-          transition={{ duration: 0.15 }}
-          className="bg-[#FFFFFF]/75 border border-[#3E000C]/12 rounded-2xl p-5 flex flex-col justify-between hover:border-[#3E000C]/30 transition-colors shadow-2xs"
-        >
-          <div className="space-y-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#3E000C]/8 border border-[#3E000C]/15 flex items-center justify-center text-[#3E000C]">
-              <TrendingUp className="w-4.5 h-4.5" />
-            </div>
-            <h3 className="text-sm font-bold text-[#3E000C]">Ward Command Portal</h3>
-            <p className="text-[#3E000C]/70 text-xs leading-relaxed">
-              Exposure-weighted priority queue ranking repairs by community impact with live before/after verification.
-            </p>
-          </div>
-          <Link href="/admin" className="pt-4">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3E000C] hover:underline underline-offset-4">
-              Official Portal <ArrowRight className="w-3.5 h-3.5" />
-            </span>
-          </Link>
-        </motion.div>
-      </section>
-
-      {/* Metrics Row */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Daily Commuters Protected", value: "14,800+", icon: Users },
-          { label: "Dark Spots Lit / Resolved", value: "142 Spots", icon: CheckCircle2 },
-          { label: "Avg SLA Repair Resolution", value: "4.2 Hours", icon: Clock },
-          { label: "Safe Corridor Rating", value: "98.4%", icon: ShieldCheck },
-        ].map((stat, i) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={i}
-              className="bg-[#FFFFFF]/75 border border-[#3E000C]/12 rounded-2xl p-4 flex items-center gap-3.5 shadow-2xs"
-            >
-              <div className="p-2.5 rounded-xl bg-[#3E000C]/8 border border-[#3E000C]/12 text-[#3E000C]">
-                <Icon className="w-4 h-4" />
+      {/* Exactly Three Big Buttons (As Requested) */}
+      <div className="space-y-3.5 pt-2">
+        {/* 1. Report a Problem */}
+        <Link href="/report" className="block">
+          <motion.div
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.99 }}
+            className="p-5 rounded-3xl bg-[#3E000C] text-[#FFECD1] flex items-center justify-between shadow-md hover:shadow-lg transition-all border border-[#3E000C] cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#FFECD1]/15 flex items-center justify-center shrink-0 border border-[#FFECD1]/20">
+                <Camera className="w-6 h-6 text-[#FFECD1]" />
               </div>
               <div>
-                <div className="text-xl font-black text-[#3E000C]">{stat.value}</div>
-                <div className="text-[11px] text-[#3E000C]/65 font-medium">{stat.label}</div>
+                <h2 className="text-base sm:text-lg font-bold tracking-tight">
+                  Report a Hazard
+                </h2>
+                <p className="text-xs text-[#FFECD1]/75 font-normal">
+                  Gemini AI severity scan for potholes, unlit lamps & open drains
+                </p>
               </div>
             </div>
-          );
-        })}
-      </section>
+            <ArrowRight className="w-5 h-5 text-[#FFECD1]/80 shrink-0" />
+          </motion.div>
+        </Link>
+
+        {/* 2. Safe Route Navigation */}
+        <Link href="/route" className="block">
+          <motion.div
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.99 }}
+            className="p-5 rounded-3xl bg-white text-[#3E000C] flex items-center justify-between shadow-xs hover:shadow-md transition-all border border-[#3E000C]/15 cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#3E000C]/8 flex items-center justify-center shrink-0 border border-[#3E000C]/12">
+                <Navigation className="w-6 h-6 text-[#3E000C]" />
+              </div>
+              <div>
+                <h2 className="text-base sm:text-lg font-bold tracking-tight">
+                  Safe Route Navigation
+                </h2>
+                <p className="text-xs text-[#3E000C]/70 font-normal">
+                  OSRM corridors avoiding reported hazard zones and dark spots
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-5 h-5 text-[#3E000C]/60 shrink-0" />
+          </motion.div>
+        </Link>
+
+        {/* 3. My Reports & Fix Tracker */}
+        <Link href="/my-reports" className="block">
+          <motion.div
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.99 }}
+            className="p-5 rounded-3xl bg-white text-[#3E000C] flex items-center justify-between shadow-xs hover:shadow-md transition-all border border-[#3E000C]/15 cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#3E000C]/8 flex items-center justify-center shrink-0 border border-[#3E000C]/12">
+                <FileText className="w-6 h-6 text-[#3E000C]" />
+              </div>
+              <div>
+                <h2 className="text-base sm:text-lg font-bold tracking-tight">
+                  My Reports & Proofs
+                </h2>
+                <p className="text-xs text-[#3E000C]/70 font-normal">
+                  Track repair SLA countdowns & AI Before/After fix verification
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-5 h-5 text-[#3E000C]/60 shrink-0" />
+          </motion.div>
+        </Link>
+      </div>
     </div>
   );
 }
