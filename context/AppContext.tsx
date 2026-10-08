@@ -62,6 +62,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Dynamically synchronize <html lang="..."> attribute with the chosen language
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = language.toLowerCase();
+    }
+  }, [language]);
+
   const t = useCallback(
     (key: string): string => {
       const langDict = TRANSLATIONS[language] || TRANSLATIONS.EN;

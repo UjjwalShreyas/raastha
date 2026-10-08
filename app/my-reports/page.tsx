@@ -93,6 +93,15 @@ export default function MyReportsPage() {
                   <span className="font-mono text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded bg-[#3E000C]/8 border border-[#3E000C]/12">
                     {issue.tracking_id}
                   </span>
+                  {issue.is_sample || issue.tracking_id.startsWith("SAMPLE-") ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
+                      {t("sampleDataBadge")}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300">
+                      {t("liveReportBadge")}
+                    </span>
+                  )}
                   <span className="text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded-full bg-[#3E000C] text-[#FFECD1]">
                     Sev {issue.severity}/5
                   </span>

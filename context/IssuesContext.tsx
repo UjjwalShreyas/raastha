@@ -30,6 +30,7 @@ export interface Issue {
   status: IssueStatus;
   created_at: string;
   updated_at: string;
+  is_sample?: boolean;
 }
 
 export interface AddIssueInput {
@@ -92,58 +93,61 @@ function playHighAlertChime() {
   }
 }
 
-// Initial starter data for Hyderabad if table is empty
+// Initial starter data for Hyderabad (explicitly labelled Sample data)
 const INITIAL_DEMO_ISSUES: Issue[] = [
   {
     id: "3e0c0001-0000-4000-8000-000000000001",
-    tracking_id: "RST-CYBER01",
+    tracking_id: "SAMPLE-GHMC-01",
     type: "pothole",
     severity: 5,
     severity_source: "ai",
-    description: "Deep pothole at Cyber Towers incline bottlenecking evening traffic.",
-    lat: 17.4435,
-    lng: 78.3772,
-    ward: "Circle 20 - Madhapur / Serilingampally, Hyderabad",
+    description: "Deep pothole at Cyber Towers Incline bottlenecking evening traffic.",
+    lat: 17.4504,
+    lng: 78.3808,
+    ward: "Circle 20 - Serilingampally (Madhapur & Hitec City)",
     photo_url: "https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=600&auto=format&fit=crop&q=80",
     after_photo_url: null,
-    ai_summary: "Severe road cavity detected (>15cm depth). Immediate rim & 2-wheeler hazard.",
+    ai_summary: "Severe road cavity detected. Immediate rim & 2-wheeler hazard.",
     status: "reported",
     created_at: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
     updated_at: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+    is_sample: true,
   },
   {
     id: "3e0c0002-0000-4000-8000-000000000002",
-    tracking_id: "RST-DURGAM02",
+    tracking_id: "SAMPLE-GHMC-02",
     type: "streetlight",
     severity: 4,
     severity_source: "ai",
-    description: "Extinguished luminaire pole array near Durgam Cheruvu pedestrian stretch.",
-    lat: 17.4365,
-    lng: 78.3842,
-    ward: "Circle 20 - Madhapur / Serilingampally, Hyderabad",
+    description: "Extinguished luminaire pole array near Road No. 36 approach.",
+    lat: 17.4259,
+    lng: 78.4215,
+    ward: "Circle 18 - Jubilee Hills & Banjara Hills",
     photo_url: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=600&auto=format&fit=crop&q=80",
     after_photo_url: null,
-    ai_summary: "Unlit dark stretch. 0 LUX illumination along pedestrian path.",
+    ai_summary: "Unlit dark stretch. Low illumination along pedestrian path.",
     status: "dispatched",
     created_at: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
     updated_at: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+    is_sample: true,
   },
   {
     id: "3e0c0003-0000-4000-8000-000000000003",
-    tracking_id: "RST-HITEC003",
-    type: "pothole",
-    severity: 3,
+    tracking_id: "SAMPLE-GHMC-03",
+    type: "other",
+    severity: 5,
     severity_source: "manual",
-    description: "Surface disintegration near Mindspace rotary.",
-    lat: 17.4392,
-    lng: 78.3811,
-    ward: "Circle 20 - Madhapur / Serilingampally, Hyderabad",
-    photo_url: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=600&auto=format&fit=crop&q=80",
+    description: "Damaged drainage chamber opening near Charminar South Gate.",
+    lat: 17.3616,
+    lng: 78.4747,
+    ward: "Circle 10 - Charminar & Old City",
+    photo_url: "https://images.unsplash.com/photo-1584467735871-8e85353a8413?w=600&auto=format&fit=crop&q=80",
     after_photo_url: null,
     ai_summary: null,
     status: "in_progress",
     created_at: new Date(Date.now() - 180 * 60 * 1000).toISOString(),
     updated_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    is_sample: true,
   },
 ];
 

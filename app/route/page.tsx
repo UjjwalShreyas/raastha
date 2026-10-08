@@ -164,10 +164,10 @@ export default function SafeRoutePage() {
         <div>
           <h1 className="text-2xl font-bold text-[#3E000C] flex items-center gap-2.5">
             <Navigation className="w-6 h-6 text-[#3E000C]" />
-            <span>Safe Corridor Navigation (Hyderabad)</span>
+            <span>{t("navIlluminatedCorridor")}</span>
           </h1>
           <p className="text-[#3E000C]/65 text-xs mt-1">
-            OSRM pathfinding re-ranked by streetlighting LUX levels and proximity to reported road hazards
+            {t("navSubtitle")}
           </p>
         </div>
 
@@ -179,12 +179,12 @@ export default function SafeRoutePage() {
             {audioNavigationMuted ? (
               <>
                 <VolumeX className="w-3.5 h-3.5 text-[#3E000C]/50" />
-                <span>Muted</span>
+                <span>{t("muted")}</span>
               </>
             ) : (
               <>
                 <Volume2 className="w-3.5 h-3.5 text-[#3E000C]" />
-                <span>Voice Guidance</span>
+                <span>{t("voiceGuidance")}</span>
               </>
             )}
           </button>
@@ -206,7 +206,7 @@ export default function SafeRoutePage() {
           {/* Destination Selector */}
           <div className="bg-[#FFFFFF]/80 border border-[#3E000C]/12 rounded-2xl p-4 space-y-2.5 shadow-2xs">
             <label className="text-[11px] font-bold text-[#3E000C]/60 uppercase tracking-wider block">
-              Select Destination in Hyderabad
+              {t("navSelectDestination")}
             </label>
             <div className="space-y-1.5">
               {MOCK_DESTINATIONS.map((dest, idx) => (
@@ -248,7 +248,7 @@ export default function SafeRoutePage() {
           <div className="space-y-2.5">
             <div className="flex justify-between items-center">
               <span className="text-[11px] font-bold text-[#3E000C]/60 uppercase tracking-wider block">
-                Calculated Route Alternatives
+                {t("routeAlternatives")}
               </span>
               {isLoadingRoutes && (
                 <span className="text-[10px] text-[#3E000C]/60 flex items-center gap-1">
@@ -374,33 +374,33 @@ export default function SafeRoutePage() {
               onClick={handleStartNavigation}
               leftIcon={<Navigation className="w-4 h-4 text-[#FFECD1]" />}
             >
-              Start Safe Navigation
+              {t("startNavigation")}
             </Button>
           ) : (
             <div className="bg-[#FFFFFF]/85 border border-[#3E000C]/15 rounded-2xl p-4 space-y-3 shadow-2xs">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#3E000C] flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                  Live Navigation Active
+                  {t("liveNavActive")}
                 </span>
                 <button
                   onClick={() => setIsNavigating(false)}
                   className="text-[11px] font-semibold text-[#3E000C]/60 hover:text-[#3E000C] cursor-pointer"
                 >
-                  End Trip
+                  {t("endTrip")}
                 </button>
               </div>
 
               {/* Turn-by-Turn step */}
               <div className="p-3 bg-[#FFECD1]/30 rounded-xl border border-[#3E000C]/10 space-y-1">
                 <div className="text-[10px] font-bold text-[#3E000C]/60 uppercase tracking-wider">
-                  Step {currentStepIndex + 1} of {turnByTurnSteps.length}
+                  {t("turnByTurnNav")}: {currentStepIndex + 1} / {turnByTurnSteps.length}
                 </div>
                 <div className="text-xs font-bold text-[#3E000C]">
                   {turnByTurnSteps[currentStepIndex]?.text}
                 </div>
                 <div className="text-[11px] text-[#3E000C]/70">
-                  Distance: {turnByTurnSteps[currentStepIndex]?.dist}
+                  {turnByTurnSteps[currentStepIndex]?.dist}
                 </div>
               </div>
 
@@ -412,8 +412,8 @@ export default function SafeRoutePage() {
                 rightIcon={<ArrowRight className="w-4 h-4" />}
               >
                 {currentStepIndex === turnByTurnSteps.length - 1
-                  ? "Arrived at Destination"
-                  : "Next Step"}
+                  ? t("destinationReached")
+                  : t("nextDirection")}
               </Button>
             </div>
           )}

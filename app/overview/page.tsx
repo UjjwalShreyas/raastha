@@ -9,11 +9,13 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useIssues } from "@/context/IssuesContext";
+import { useApp } from "@/context/AppContext";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { MOCK_BASE_COORDINATES, MOCK_ROUTES } from "@/lib/mockData";
 import { Button } from "@/components/ui/Button";
 
 export default function OverviewPage() {
+  const { t } = useApp();
   const { issues } = useIssues();
   const [activeTab, setActiveTab] = useState<"overview" | "hazards" | "corridor">("overview");
 
@@ -145,8 +147,19 @@ export default function OverviewPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="font-mono text-[10px] text-[#3E000C]/60 block">{issue.tracking_id}</span>
-                    <h4 className="text-xs font-bold text-[#3E000C] line-clamp-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-[10px] text-[#3E000C]/60 block">{issue.tracking_id}</span>
+                      {issue.is_sample || issue.tracking_id.startsWith("SAMPLE-") ? (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                          {t("sampleDataBadge")}
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                          {t("liveReportBadge")}
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="text-xs font-bold text-[#3E000C] line-clamp-1 mt-0.5">
                       {issue.description || `${issue.type} on ${issue.ward || "Road"}`}
                     </h4>
                   </div>
@@ -172,12 +185,12 @@ export default function OverviewPage() {
           <div className="pt-1 flex gap-2">
             <Link href="/report" className="flex-1">
               <Button variant="primary" size="sm" className="w-full text-xs">
-                Report New Hazard
+                {t("reportProblem")}
               </Button>
             </Link>
             <Link href="/my-reports" className="flex-1">
               <Button variant="secondary" size="sm" className="w-full text-xs">
-                Track My Reports
+                {t("myReports")}
               </Button>
             </Link>
           </div>

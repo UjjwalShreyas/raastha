@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
 
-// Standard Hyderabad GHMC Central Corridor coordinates
-export const HYDERABAD_FALLBACK_COORDINATES: [number, number] = [17.4401, 78.3489];
+// Standard Hyderabad GHMC Central Corridor coordinates (17.385, 78.4867)
+export const HYDERABAD_FALLBACK_COORDINATES: [number, number] = [17.385, 78.4867];
 
 export type LocationPermissionStatus = "idle" | "loading" | "granted" | "denied" | "unsupported";
 

@@ -5,6 +5,16 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+// Bundle Leaflet marker icons locally from /images/leaflet/ (no external unpkg CDN)
+if (typeof window !== "undefined") {
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: "/images/leaflet/marker-icon-2x.png",
+    iconUrl: "/images/leaflet/marker-icon.png",
+    shadowUrl: "/images/leaflet/marker-shadow.png",
+  });
+}
+
 const defaultPinSvg = `data:image/svg+xml;utf8,${encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="26" height="38" viewBox="0 0 26 38">
   <path d="M13 1C6.37 1 1 6.37 1 13c0 9.5 12 24 12 24s12-14.5 12-24c0-6.63-5.37-12-12-12z" fill="#3E000C" stroke="#FFECD1" stroke-width="2"/>

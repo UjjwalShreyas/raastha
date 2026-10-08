@@ -278,10 +278,10 @@ export default function AdminWardPortalPage() {
             <span>GHMC Ward Command | Officer #104 (Serilingampally / Madhapur)</span>
           </div>
           <h1 className="text-2xl font-bold text-[#3E000C] tracking-tight">
-            Exposure-Weighted Municipal Dispatch
+            {t("adminPortalTitle")}
           </h1>
           <p className="text-[#3E000C]/65 text-xs mt-0.5">
-            Auto-ranked municipal queue: Priority = (Severity × Commuter Volume Proxy) / 100 with 30m duplicate clustering
+            {t("adminPortalSubtitle")}
           </p>
         </div>
 
@@ -309,7 +309,7 @@ export default function AdminWardPortalPage() {
             onChange={(e) => setSelectedWard(e.target.value)}
             className="bg-white border border-[#3E000C]/15 rounded-xl px-3 py-1.5 text-xs font-semibold text-[#3E000C] focus:outline-none focus:border-[#3E000C]/50 cursor-pointer shadow-2xs"
           >
-            <option value="All Circles">All Hyderabad Circles</option>
+            <option value="All Circles">{t("filterAllCircles")}</option>
             <option value="Circle 20">Circle 20 - Madhapur / Serilingampally</option>
             <option value="Circle 18">Circle 18 - Jubilee Hills</option>
             <option value="Circle 21">Circle 21 - Gachibowli</option>
@@ -321,7 +321,7 @@ export default function AdminWardPortalPage() {
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="bg-white border border-[#3E000C]/15 rounded-xl px-3 py-1.5 text-xs font-semibold text-[#3E000C] focus:outline-none focus:border-[#3E000C]/50 cursor-pointer shadow-2xs"
           >
-            <option value="All Types">All Hazard Types</option>
+            <option value="All Types">{t("filterAllTypes")}</option>
             <option value="Pothole">Potholes</option>
             <option value="Broken Streetlight">Streetlights</option>
             <option value="Open Manhole">Manholes</option>
@@ -333,7 +333,7 @@ export default function AdminWardPortalPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#3E000C]/20 bg-white text-xs font-semibold text-[#3E000C] hover:bg-red-50 hover:text-red-700 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out</span>
+            <span>{t("signOut")}</span>
           </button>
         </div>
       </div>
@@ -341,19 +341,19 @@ export default function AdminWardPortalPage() {
       {/* Stats Ribbon */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         <div className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-2xl p-4 space-y-0.5 shadow-2xs">
-          <span className="text-[11px] text-[#3E000C]/60 font-semibold block">Total Active Issues</span>
+          <span className="text-[11px] text-[#3E000C]/60 font-semibold block">{t("statTotalIssues")}</span>
           <div className="text-2xl font-black text-[#3E000C]">{totalReported}</div>
         </div>
         <div className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-2xl p-4 space-y-0.5 shadow-2xs">
-          <span className="text-[11px] text-red-800 font-bold block">SLA Overdue</span>
+          <span className="text-[11px] text-red-800 font-bold block">{t("statSlaOverdue")}</span>
           <div className="text-2xl font-black text-red-800">{overdueCount}</div>
         </div>
         <div className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-2xl p-4 space-y-0.5 shadow-2xs">
-          <span className="text-[11px] text-[#3E000C]/60 font-semibold block">Active Units Dispatched</span>
+          <span className="text-[11px] text-[#3E000C]/60 font-semibold block">{t("statUnitsDispatched")}</span>
           <div className="text-2xl font-black text-[#3E000C]">{inProgressCount}</div>
         </div>
         <div className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-2xl p-4 space-y-0.5 shadow-2xs">
-          <span className="text-[11px] text-[#3E000C]/60 font-semibold block">Commuters Protected</span>
+          <span className="text-[11px] text-[#3E000C]/60 font-semibold block">{t("statCommutersProtected")}</span>
           <div className="text-2xl font-black text-[#3E000C]">{totalCommutersImpacted.toLocaleString()}</div>
         </div>
       </div>
@@ -394,6 +394,15 @@ export default function AdminWardPortalPage() {
                         <span className="font-mono text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded bg-[#3E000C]/8 border border-[#3E000C]/12">
                           {issue.tracking_id}
                         </span>
+                        {issue.is_sample || issue.tracking_id.startsWith("SAMPLE-") ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
+                            {t("sampleDataBadge")}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300">
+                            {t("liveReportBadge")}
+                          </span>
+                        )}
                         <span className="text-xs font-bold text-[#3E000C] px-2 py-0.5 rounded-full bg-[#3E000C] text-[#FFECD1]">
                           Sev {issue.severity}/5
                         </span>
@@ -413,9 +422,9 @@ export default function AdminWardPortalPage() {
                     </div>
 
                     <div className="sm:text-right shrink-0">
-                      <div className="text-xs font-semibold text-[#3E000C]/60">Exposure Index</div>
+                      <div className="text-xs font-semibold text-[#3E000C]/60">{t("exposureIndex")}</div>
                       <div className="text-xl font-black text-[#3E000C]">
-                        {Math.round((issue.severity * 3500) / 100)} <span className="text-xs font-normal">pts</span>
+                        {Math.round((issue.severity * 3500) / 100)} <span className="text-xs font-normal">{t("pts")}</span>
                       </div>
                       <div className="text-[10px] text-[#3E000C]/65 font-mono">
                         ({issue.severity} × 3,500) / 100
@@ -484,16 +493,16 @@ export default function AdminWardPortalPage() {
           <div className="bg-[#FFFFFF]/85 border border-[#3E000C]/12 rounded-3xl p-4 space-y-3 shadow-2xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#3E000C] uppercase tracking-wider">
-                Hyderabad GIS Incident Radar
+                {t("hazardRadar")}
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#3E000C]/8 text-[#3E000C]">
-                {prioritySortedIssues.length} Pins
+                {prioritySortedIssues.length} {t("pins")}
               </span>
             </div>
 
             <div className="h-80 rounded-2xl overflow-hidden border border-[#3E000C]/12">
               <DynamicMap
-                center={[17.4401, 78.3489]}
+                center={[17.385, 78.4867]}
                 zoom={14}
                 markers={wardMapMarkers}
               />

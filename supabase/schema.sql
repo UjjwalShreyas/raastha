@@ -45,6 +45,7 @@ create table if not exists public.issues (
   after_photo_url text,
   ai_summary text,
   status text not null default 'reported' check (status in ('reported', 'dispatched', 'in_progress', 'resolved', 'rejected')),
+  is_sample boolean not null default false,
   created_at timestamp with time zone default now() not null,
   updated_at timestamp with time zone default now() not null
 );

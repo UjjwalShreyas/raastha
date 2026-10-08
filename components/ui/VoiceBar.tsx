@@ -216,7 +216,7 @@ export function VoiceBar() {
           title="Command Mic"
         >
           {listening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-          <span>{listening ? "Listening..." : "Voice Command"}</span>
+          <span>{listening ? t("listening") : t("voiceCommandBtn")}</span>
         </button>
 
         {/* Typed command toggle button if speech is supported */}
