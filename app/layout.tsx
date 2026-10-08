@@ -21,7 +21,7 @@ export default function RootLayout({
       lang="en"
       className="h-full antialiased"
     >
-      <body className="min-h-full flex flex-col bg-[#FFECD1] text-[#3E000C] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] selection:bg-[#3E000C] selection:text-[#FFECD1]">
+      <body className="min-h-full flex flex-col bg-[#FFECD1] text-[#3E000C] font-[Inter,system-ui,Arial,sans-serif] selection:bg-[#3E000C] selection:text-[#FFECD1]">
         <AppProvider>
           <Navbar />
           <main className="flex-1 pb-24 relative">{children}</main>

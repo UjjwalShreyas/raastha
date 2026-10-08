@@ -37,6 +37,7 @@ export default function AdminWardPortalPage() {
     highPriorityToast,
     isOfficerAuthenticated,
     setOfficerAuthenticated,
+    t,
   } = useApp();
 
   // Login form state
@@ -345,8 +346,8 @@ export default function AdminWardPortalPage() {
               <TrendingUp className="w-4 h-4 text-[#3E000C]" />
               <span>Prioritized Incident Dispatch Queue</span>
             </h2>
-            <span className="text-xs text-[#3E000C]/60 font-medium">
-              Sorted by Exposure Impact
+            <span className="text-xs text-[#3E000C]/70 font-medium hidden sm:inline">
+              {t("exposureRanked")}
             </span>
           </div>
 
@@ -390,9 +391,12 @@ export default function AdminWardPortalPage() {
                     </div>
 
                     <div className="sm:text-right shrink-0">
-                      <div className="text-xs font-semibold text-[#3E000C]/60">Priority Impact</div>
+                      <div className="text-xs font-semibold text-[#3E000C]/60">Exposure Index</div>
                       <div className="text-xl font-black text-[#3E000C]">
                         {issue.priorityScore} <span className="text-xs font-normal">pts</span>
+                      </div>
+                      <div className="text-[10px] text-[#3E000C]/65 font-mono">
+                        ({issue.severity} × {issue.exposureCount}) / 100
                       </div>
                     </div>
                   </div>
@@ -400,11 +404,11 @@ export default function AdminWardPortalPage() {
                   {/* Impact breakdown */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-2 px-3 rounded-xl bg-[#FFECD1]/25 border border-[#3E000C]/10 text-xs">
                     <div>
-                      <span className="text-[10px] text-[#3E000C]/60 block font-semibold">Commuter Volume:</span>
+                      <span className="text-[10px] text-[#3E000C]/60 block font-semibold">{t("exposureCount")}:</span>
                       <span className="font-bold text-[#3E000C]">{issue.exposureCount.toLocaleString()}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-[#3E000C]/60 block font-semibold">SLA Status:</span>
+                      <span className="text-[10px] text-[#3E000C]/60 block font-semibold">{t("slaTimer")}:</span>
                       <span
                         className={`font-bold ${
                           isOverdue ? "text-red-700" : isResolved ? "text-emerald-700" : "text-[#3E000C]"
@@ -429,7 +433,7 @@ export default function AdminWardPortalPage() {
                         onClick={() => handleDispatchUnit(issue.id)}
                         leftIcon={<Send className="w-3.5 h-3.5" />}
                       >
-                        {dispatchingId === issue.id ? "Assigning Squad..." : "Dispatch Municipal Squad"}
+                        {dispatchingId === issue.id ? t("assigningSquad") : t("dispatchSquad")}
                       </Button>
                     )}
 
@@ -440,14 +444,14 @@ export default function AdminWardPortalPage() {
                         onClick={() => handleOpenVerifyModal(issue)}
                         leftIcon={<Sparkles className="w-3.5 h-3.5 text-[#FFECD1]" />}
                       >
-                        Verify & Resolve Fix with AI
+                        {t("verifyResolve")}
                       </Button>
                     )}
 
                     {issue.status === "Resolved" && (
                       <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-emerald-100 border border-emerald-300">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Fix Approved & Neutralized</span>
+                        <span>{t("fixNeutralized")}</span>
                       </span>
                     )}
                   </div>

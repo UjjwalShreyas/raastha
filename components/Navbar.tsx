@@ -14,12 +14,13 @@ import {
   MapPin,
   Menu,
   X,
+  WifiOff,
 } from "lucide-react";
 import { useApp, LanguageCode } from "@/context/AppContext";
 
 export function Navbar() {
   const pathname = usePathname();
-  const { language, setLanguage, t, triggerSOS, sosActive } = useApp();
+  const { language, setLanguage, t, triggerSOS, sosActive, isOnline } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Home and Overview are now separate screens
@@ -34,6 +35,12 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-[100] w-full bg-[#FFECD1]/95 backdrop-blur-xl border-b border-[#3E000C]/12 shadow-xs">
+      {!isOnline && (
+        <div className="bg-[#3E000C] text-[#FFECD1] text-[11px] font-semibold py-1 px-4 text-center flex items-center justify-center gap-2 border-b border-[#FFECD1]/20">
+          <WifiOff className="w-3 h-3 text-[#FFECD1]" />
+          <span>{t("offlineNotice")}</span>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14 gap-3">
           {/* Brand Logo */}

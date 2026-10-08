@@ -17,8 +17,8 @@ import {
 import { useApp } from "@/context/AppContext";
 
 export default function Home() {
-  const { language, setLanguage, voice, triggerSOS } = useApp();
-  const [typedInput, setTypedInput] = useState<string>("");
+  const { language, setLanguage, voice, triggerSOS, t, locationError } = useApp();
+  const [typedInput, setTypedInput] = useState<string>(" ");
   const [isTypingFallbackOpen, setIsTypingFallbackOpen] = useState<boolean>(false);
 
   const handleVoiceToggle = () => {
@@ -73,10 +73,10 @@ export default function Home() {
       <div className="text-center space-y-5 py-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-black text-[#3E000C] tracking-tight">
-            Raastha
+            {t("appName")}
           </h1>
           <p className="text-xs sm:text-sm text-[#3E000C]/70 font-normal mt-1">
-            Tap the mic to report a hazard or find a safe route in your language
+            {t("tagline")}
           </p>
         </div>
 
@@ -105,13 +105,23 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="mt-3 text-center">
+          <div className="mt-3 text-center space-y-2">
             <span className="text-xs font-bold text-[#3E000C]">
-              {voice.isListening ? "Listening in " + language + "... Speak now" : "Tap to Speak"}
+              {voice.isListening ? t("listening") : t("speakNow")}
             </span>
             {voice.transcript && (
-              <p className="text-xs text-[#3E000C]/80 bg-white/80 border border-[#3E000C]/12 px-3 py-1.5 rounded-xl mt-2 max-w-sm mx-auto font-medium">
+              <p className="text-xs text-[#3E000C]/80 bg-white/80 border border-[#3E000C]/12 px-3 py-1.5 rounded-xl max-w-sm mx-auto font-medium">
                 "{voice.transcript}"
+              </p>
+            )}
+            {voice.speechNotice && (
+              <p className="text-[11px] text-amber-900 bg-amber-100/90 border border-amber-300 px-3 py-1.5 rounded-xl max-w-sm mx-auto font-medium">
+                {t("micDenied")}
+              </p>
+            )}
+            {locationError && (
+              <p className="text-[11px] text-[#3E000C]/75 bg-white/60 border border-[#3E000C]/12 px-3 py-1 rounded-xl max-w-sm mx-auto font-medium">
+                {t("gpsDenied")}
               </p>
             )}
           </div>
@@ -163,10 +173,10 @@ export default function Home() {
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-bold tracking-tight">
-                  Report a Hazard
+                  {t("reportProblem")}
                 </h2>
                 <p className="text-xs text-[#FFECD1]/75 font-normal">
-                  Gemini AI severity scan for potholes, unlit lamps & open drains
+                  {t("reportProblemSub")}
                 </p>
               </div>
             </div>
@@ -187,10 +197,10 @@ export default function Home() {
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-bold tracking-tight">
-                  Safe Route Navigation
+                  {t("safeRoute")}
                 </h2>
                 <p className="text-xs text-[#3E000C]/70 font-normal">
-                  OSRM corridors avoiding reported hazard zones and dark spots
+                  {t("safeRouteSub")}
                 </p>
               </div>
             </div>
@@ -211,10 +221,10 @@ export default function Home() {
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-bold tracking-tight">
-                  My Reports & Proofs
+                  {t("myReports")}
                 </h2>
                 <p className="text-xs text-[#3E000C]/70 font-normal">
-                  Track repair SLA countdowns & AI Before/After fix verification
+                  {t("myReportsSub")}
                 </p>
               </div>
             </div>

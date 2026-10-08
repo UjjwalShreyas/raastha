@@ -52,6 +52,9 @@ interface AppContextType {
   sosActive: boolean;
   triggerSOS: () => void;
   dismissSOS: () => void;
+
+  // Connectivity
+  isOnline: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -98,6 +101,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Real-Time Notifications
   const [unreadAlertCount, setUnreadAlertCount] = useState<number>(0);
   const [highPriorityToast, setHighPriorityToast] = useState<string | null>(null);
+
+  // Network Connectivity State
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsOnline(navigator.onLine);
+      const handleOnline = () => setIsOnline(true);
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener("online", handleOnline);
+      window.addEventListener("offline", handleOffline);
+      return () => {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+      };
+    }
+  }, []);
 
   // Single consolidated Geolocation call (fallback to Hyderabad Hitec City: 17.4401, 78.3489)
   const geo = useGeolocation();
@@ -265,6 +285,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sosActive,
         triggerSOS,
         dismissSOS,
+        isOnline,
       }}
     >
       {children}
