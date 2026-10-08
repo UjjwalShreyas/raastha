@@ -1,5 +1,40 @@
+import fs from "fs";
+import path from "path";
 import { HazardIssue, MOCK_ISSUES } from "./mockData";
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
+
+const DATA_DIR = path.join(process.cwd(), ".data");
+const DATA_FILE = path.join(DATA_DIR, "raastha_reports.json");
+
+// Ensure data folder and file exist
+function loadPersistedIssues(): HazardIssue[] {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not read local data store, using defaults:", err);
+  }
+  return [...MOCK_ISSUES];
+}
+
+function savePersistedIssues(issues: HazardIssue[]) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(issues, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Could not save to local data store:", err);
+  }
+}
 
 // Global cache across hot-reloads on Node server
 declare global {
@@ -8,32 +43,14 @@ declare global {
 }
 
 if (!global.__RAASTHA_ISSUES__) {
-  global.__RAASTHA_ISSUES__ = [...MOCK_ISSUES];
+  global.__RAASTHA_ISSUES__ = loadPersistedIssues();
 }
 
-// Haversine distance formula in meters
-export function getDistanceInMeters(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 6371e3; // Earth radius in meters
-  const rad1 = (lat1 * Math.PI) / 180;
-  const rad2 = (lat2 * Math.PI) / 180;
-  const deltaLat = ((lat2 - lat1) * Math.PI) / 180;
-  const deltaLon = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.cos(rad1) * Math.cos(rad2) * Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
-}
+import { getDistanceInMeters } from "./geoUtils";
+export { getDistanceInMeters };
 
 export async function getGlobalIssues(): Promise<HazardIssue[]> {
-  // If Supabase is connected, optionally fetch from DB
+  // If Supabase is connected, fetch from database
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
@@ -42,10 +59,9 @@ export async function getGlobalIssues(): Promise<HazardIssue[]> {
         .order("reported_at", { ascending: false });
 
       if (!error && data && data.length > 0) {
-        // Map database records to HazardIssue
         return data.map((row: any) => ({
           id: row.id,
-          trackingId: row.tracking_id || `RST-${row.id.slice(0, 5)}`,
+          trackingId: row.tracking_id || `GHMC-${row.id.slice(0, 5)}`,
           title: row.title,
           type: row.type,
           severity: row.severity,
@@ -54,8 +70,8 @@ export async function getGlobalIssues(): Promise<HazardIssue[]> {
           location: {
             lat: row.lat,
             lng: row.lng,
-            address: row.address || "Ward Arterial Road",
-            ward: row.ward || "Ward 151 - Koramangala",
+            address: row.address || "GHMC Arterial Road",
+            ward: row.ward || "Circle 20 - Madhapur / Serilingampally",
           },
           reportedAt: row.reported_at || "Just now",
           slaMinutesRemaining: row.sla_minutes || 240,
@@ -75,17 +91,20 @@ export async function getGlobalIssues(): Promise<HazardIssue[]> {
         }));
       }
     } catch (e) {
-      console.warn("Supabase fetch failed, falling back to server memory store:", e);
+      console.warn("Supabase fetch notice, falling back to local file store:", e);
     }
   }
 
-  return global.__RAASTHA_ISSUES__ || [...MOCK_ISSUES];
+  if (!global.__RAASTHA_ISSUES__) {
+    global.__RAASTHA_ISSUES__ = loadPersistedIssues();
+  }
+  return global.__RAASTHA_ISSUES__;
 }
 
 export async function addOrClusterIssue(
   newIssue: HazardIssue
 ): Promise<{ issue: HazardIssue; wasClustered: boolean }> {
-  const currentList = global.__RAASTHA_ISSUES__ || [...MOCK_ISSUES];
+  const currentList = global.__RAASTHA_ISSUES__ || loadPersistedIssues();
 
   // 1. Check for duplicate clustering within 30 meters for active reports of same hazard type
   const DUPLICATE_THRESHOLD_METERS = 30;
@@ -117,11 +136,12 @@ export async function addOrClusterIssue(
       isClustered: true,
       exposureCount: boostedExposure,
       priorityScore: boostedPriority,
-      title: `${existing.title} (+${newConfirmations - 1} Citizen Confirmations)`,
+      title: `${existing.title.replace(/ \(\+\d+ Confirmations\)/, "")} (+${newConfirmations} Confirmations)`,
     };
 
     currentList[existingDuplicateIndex] = updatedIssue;
     global.__RAASTHA_ISSUES__ = currentList;
+    savePersistedIssues(currentList);
 
     // Optional Supabase update
     if (isSupabaseConfigured && supabase) {
@@ -152,6 +172,7 @@ export async function addOrClusterIssue(
   };
 
   global.__RAASTHA_ISSUES__ = [cleanIssue, ...currentList];
+  savePersistedIssues(global.__RAASTHA_ISSUES__);
 
   // Optional Supabase insert
   if (isSupabaseConfigured && supabase) {
@@ -187,7 +208,7 @@ export async function updateGlobalIssue(
   id: string,
   updates: Partial<HazardIssue>
 ): Promise<HazardIssue | null> {
-  const currentList = global.__RAASTHA_ISSUES__ || [...MOCK_ISSUES];
+  const currentList = global.__RAASTHA_ISSUES__ || loadPersistedIssues();
   const idx = currentList.findIndex((i) => i.id === id);
 
   if (idx === -1) return null;
@@ -199,6 +220,7 @@ export async function updateGlobalIssue(
 
   currentList[idx] = updated;
   global.__RAASTHA_ISSUES__ = currentList;
+  savePersistedIssues(currentList);
 
   if (isSupabaseConfigured && supabase) {
     try {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -17,15 +17,15 @@ import {
   CheckCircle,
   UploadCloud,
   Zap,
+  Info,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { useGeolocation } from "@/hooks/useGeolocation";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { Button } from "@/components/ui/Button";
 import { HazardIssue } from "@/lib/mockData";
 import { HazardAnalysisResult } from "@/app/api/analyze-hazard/route";
 
-// Self-contained embedded SVG images for presets (Guaranteed zero CORS issues)
+// Self-contained embedded SVG images for presets (Zero CORS issues, Hyderabad themes)
 const PRESET_IMAGES: {
   type: HazardIssue["type"];
   title: string;
@@ -33,93 +33,116 @@ const PRESET_IMAGES: {
 }[] = [
   {
     type: "Pothole",
-    title: "Deep Asphalt Pothole (~18cm cavity)",
+    title: "Deep Pothole at Cyber Towers Incline",
     dataUrl:
       "data:image/svg+xml;utf8," +
       encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#2d2d30"/>
-        <!-- Asphalt texture stripes -->
-        <path d="M0,200 Q150,190 300,200 T600,195" stroke="#3a3a3e" stroke-width="6" fill="none"/>
         <line x1="0" y1="210" x2="600" y2="210" stroke="#f1c40f" stroke-dasharray="30,25" stroke-width="6"/>
-        <!-- Deep jagged pothole crater -->
         <ellipse cx="300" cy="240" rx="160" ry="85" fill="#141416" stroke="#48484e" stroke-width="5"/>
         <ellipse cx="295" cy="245" rx="120" ry="60" fill="#08080a"/>
-        <!-- Rough rubble & fractures -->
-        <path d="M190,210 L150,180 M410,230 L470,200 M240,310 L220,340 M360,310 L390,350" stroke="#1f1f22" stroke-width="4"/>
         <circle cx="270" cy="240" r="12" fill="#3a3a3e"/>
         <circle cx="330" cy="260" r="16" fill="#29292c"/>
-        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">ARTERIAL ROADWAY - SEVERE CRATER CAVITY</text>
-        <text x="30" y="80" fill="#e74c3c" font-family="Helvetica, Arial, sans-serif" font-size="14">Estimated Depth: 18cm | Risk: High Wheel Rim Fracture</text>
+        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">HITEC CITY - SEVERE ROADWAY CAVITY</text>
+        <text x="30" y="80" fill="#e74c3c" font-family="Helvetica, Arial, sans-serif" font-size="14">Estimated Depth: ~15cm | Risk: 2-Wheeler Rim Damage</text>
       </svg>
     `),
   },
   {
     type: "Broken Streetlight",
-    title: "Blackout Streetlight on Pedestrian Lane",
+    title: "Extinguished Luminaire on Durgam Cheruvu Lane",
     dataUrl:
       "data:image/svg+xml;utf8," +
       encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#12131a"/>
-        <!-- Street pole -->
         <line x1="280" y1="120" x2="280" y2="400" stroke="#3f4254" stroke-width="14"/>
         <path d="M280,130 C280,70 360,70 370,110" fill="none" stroke="#3f4254" stroke-width="10"/>
-        <!-- Broken luminaire -->
         <polygon points="350,110 390,110 400,140 340,140" fill="#232634" stroke="#ff4d4f" stroke-width="2"/>
-        <line x1="360" y1="140" x2="350" y2="170" stroke="#ff4d4f" stroke-width="3" stroke-dasharray="4,4"/>
         <circle cx="370" cy="125" r="4" fill="#ff4d4f"/>
-        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">DARK CORRIDOR - UNLIT DEFECTIVE LUMINAIRE</text>
-        <text x="30" y="80" fill="#ffb84d" font-family="Helvetica, Arial, sans-serif" font-size="14">Pedestrian Risk: High Vulnerability / Zero Visibility</text>
+        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">DARK STRETCH - UNLIT STREETLIGHT ARRAY</text>
+        <text x="30" y="80" fill="#ffb84d" font-family="Helvetica, Arial, sans-serif" font-size="14">Pedestrian Risk: Zero Illumination (0 LUX)</text>
       </svg>
     `),
   },
   {
     type: "Open Manhole",
-    title: "Exposed Drainage Chamber",
+    title: "Exposed Drainage Chamber in Kondapur",
     dataUrl:
       "data:image/svg+xml;utf8," +
       encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#35363a"/>
-        <!-- Sidewalk curb -->
-        <rect x="0" y="300" width="600" height="100" fill="#4d4e53"/>
-        <line x1="0" y1="300" x2="600" y2="300" stroke="#f1f2f6" stroke-width="4"/>
-        <!-- Open Chamber Hole -->
         <circle cx="300" cy="220" r="85" fill="#050505" stroke="#ff3838" stroke-width="6"/>
         <circle cx="300" cy="220" r="70" fill="#000000"/>
-        <!-- Displaced iron cover -->
         <circle cx="430" cy="200" r="75" fill="#222326" stroke="#718093" stroke-width="6" stroke-dasharray="10,5"/>
-        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">UNGUARDED EXCAVATION / OPEN DRAIN</text>
-        <text x="30" y="80" fill="#ff3838" font-family="Helvetica, Arial, sans-serif" font-size="14">Fall Hazard: Critical Level 5 Life Danger</text>
+        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">OPEN DRAIN CHAMBER - LIFE THREAT</text>
+        <text x="30" y="80" fill="#ff3838" font-family="Helvetica, Arial, sans-serif" font-size="14">Fall Hazard: 2.1m Deep Uncovered Conduit</text>
       </svg>
     `),
   },
   {
     type: "Waterlogging",
-    title: "Submerged Road Curb & Drain Clog",
+    title: "Gachibowli Monsoon Waterlogging",
     dataUrl:
       "data:image/svg+xml;utf8," +
       encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
         <rect width="600" height="400" fill="#2c3e50"/>
-        <!-- Water surface -->
         <rect x="0" y="180" width="600" height="220" fill="#1b2a47" opacity="0.9"/>
         <path d="M0,190 Q150,180 300,195 T600,185" stroke="#48dbfb" stroke-width="3" fill="none"/>
-        <path d="M0,230 Q150,220 300,235 T600,225" stroke="#00d2d3" stroke-width="2" fill="none"/>
-        <!-- Submerged divider -->
         <rect x="180" y="160" width="240" height="80" fill="#576574" stroke="#c8d6e5" stroke-width="2"/>
-        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">MONSOON RUNOFF - WATERLOGGED CORRIDOR</text>
-        <text x="30" y="80" fill="#00d2d3" font-family="Helvetica, Arial, sans-serif" font-size="14">Hydrologic Hazard: Hidden Potholes Beneath Pool</text>
+        <text x="30" y="50" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="20">MONSOON DRAIN CHOKE - WATERLOGGING</text>
+        <text x="30" y="80" fill="#00d2d3" font-family="Helvetica, Arial, sans-serif" font-size="14">Carriageway Submerged: ~25cm Inundation</text>
       </svg>
     `),
   },
 ];
 
+// Client-side image compression to prevent Vercel body size limits
+function compressImageToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.75));
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function ReportWizardPage() {
   const router = useRouter();
-  const { language, voice, addReportedIssue } = useApp();
-  const { coordinates } = useGeolocation();
+  const { language, voice, setVoiceMode, addReportedIssue, coordinates, t } = useApp();
+
+  // Set dictation mode on mount to avoid VoiceBar keyword interference, restore on unmount
+  useEffect(() => {
+    setVoiceMode("dictation");
+    return () => {
+      setVoiceMode("command");
+    };
+  }, [setVoiceMode]);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -136,11 +159,11 @@ export default function ReportWizardPage() {
   const [severity, setSeverity] = useState<1 | 2 | 3 | 4 | 5>(4);
   const [needsFixing, setNeedsFixing] = useState<boolean>(true);
   const [exposureCount, setExposureCount] = useState<number>(3500);
-  const [ward, setWard] = useState<string>("Ward 151 - Koramangala");
+  const [ward, setWard] = useState<string>("Circle 20 - Madhapur / Serilingampally, Hyderabad");
 
   const [clarifications, setClarifications] = useState<{ question: string; answer?: string }[]>([
-    { question: "Is the hazard completely blocking pedestrian or vehicle flow?" },
-    { question: "Are streetlights in the immediate 50m radius functional?" },
+    { question: "Is the road completely blocked for two-wheelers?" },
+    { question: "Is water accumulation hiding the cavity depth?" },
   ]);
 
   // Call the AI backend route
@@ -157,63 +180,61 @@ export default function ReportWizardPage() {
 
       const data = await res.json();
 
-      if (data.success && data.analysis) {
+      if (data.available && data.analysis) {
         const analysis: HazardAnalysisResult = data.analysis;
+
+        // Check if Gemini detected that this is NOT an authentic roadway hazard
+        if (analysis.isHazard === false) {
+          setIsAiApplied(false);
+          setAiAnalysis(analysis);
+          setAiMessage(
+            "Notice: No road or municipal hazard was detected in this photo. If this is an error, please choose the category and severity manually below."
+          );
+          setIsManualOverride(true);
+          setSeverity(1);
+          setNeedsFixing(false);
+          return;
+        }
+
         setAiAnalysis(analysis);
         setIsAiApplied(true);
         setSeverity(analysis.severity);
         setNeedsFixing(analysis.needsFixing);
         setDescription(analysis.impactDescription);
-        if (analysis.recommendedExposure) {
-          setExposureCount(analysis.recommendedExposure);
+
+        if (analysis.hazardType && analysis.hazardType !== "Other") {
+          setHazardType(analysis.hazardType);
         }
 
-        // Map detected object to hazard type
-        const lower = analysis.detectedObject.toLowerCase();
-        if (lower.includes("pothole") || lower.includes("cavity") || lower.includes("asphalt") || lower.includes("crater")) {
-          setHazardType("Pothole");
-        } else if (lower.includes("light") || lower.includes("lamp") || lower.includes("dark")) {
-          setHazardType("Broken Streetlight");
-        } else if (lower.includes("drain") || lower.includes("manhole")) {
-          setHazardType("Open Manhole");
-        } else if (lower.includes("water") || lower.includes("flood")) {
-          setHazardType("Waterlogging");
-        } else if (lower.includes("debris") || lower.includes("gravel")) {
-          setHazardType("Road Debris");
+        if (analysis.clarifications && analysis.clarifications.length > 0) {
+          setClarifications(analysis.clarifications);
         }
 
         setTitle(`${analysis.hazardIndex} (${analysis.detectedObject})`);
-
-        if (data.analysis.source === "gemini") {
-          setAiMessage("✨ Gemini Vision AI analyzed this photo successfully.");
-        } else if (data.isApiKeyMissing) {
-          setAiMessage("Notice: Using intelligent simulation mode. You can adjust the severity below.");
-        }
+        setAiMessage("✨ Gemini Vision AI analyzed this hazard successfully.");
       } else {
-        // Fallback calculation
-        setAiMessage("AI evaluation completed. You can adjust the severity level below.");
+        // Honest fallback: API unavailable, ask user to set severity manually. Never invent detections!
+        setIsAiApplied(false);
+        setAiMessage(data.message || data.error || "Gemini Vision is unavailable. Please choose the hazard severity manually below.");
+        setIsManualOverride(true);
       }
     } catch (err) {
       console.warn("AI analysis network issue:", err);
-      setAiMessage("Network issue calling AI. You can manually set the severity below.");
+      setAiMessage("Network issue calling Gemini. Please select the severity manually below.");
       setIsManualOverride(true);
     } finally {
       setIsScanningPhoto(false);
     }
   };
 
-  // Convert uploaded file to base64
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle uploaded file with client-side canvas compression
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64Url = reader.result as string;
-      setPhotoUrl(base64Url);
-      await analyzeImageWithAi(base64Url, file.type || "image/jpeg");
-    };
-    reader.readAsDataURL(file);
+    const compressedBase64 = await compressImageToDataUrl(file);
+    setPhotoUrl(compressedBase64);
+    await analyzeImageWithAi(compressedBase64, "image/jpeg");
   };
 
   // Select preset SVG image and send to AI immediately
@@ -223,10 +244,8 @@ export default function ReportWizardPage() {
     setTitle(preset.title);
     setIsScanningPhoto(true);
 
-    // Convert SVG data URL to a clean PNG/base64 payload
     try {
       const img = new Image();
-      img.crossOrigin = "anonymous";
       img.onload = async () => {
         const canvas = document.createElement("canvas");
         canvas.width = 600;
@@ -249,18 +268,23 @@ export default function ReportWizardPage() {
     }
   };
 
-  // Handle manual severity selection
   const handleManualSeverityChange = (level: 1 | 2 | 3 | 4 | 5) => {
     setSeverity(level);
     setIsManualOverride(true);
-    // Severity 1 or 2 is cosmetic (not severe), 3-5 strictly needs fixing
     setNeedsFixing(level >= 3);
   };
 
   const priorityScore = Math.round((severity * exposureCount) / 100);
 
-  const handleSubmitReport = () => {
-    const trackingId = `RST-${Math.floor(1000 + Math.random() * 9000)}X`;
+  const handleSubmitReport = async () => {
+    if (!photoUrl) {
+      alert("Please upload or snap a photo of the hazard first.");
+      return;
+    }
+
+    // Generate collision-resistant tracking ID
+    const trackingId = `GHMC-${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(65 + Math.floor(Math.random() * 26))}`;
+
     const newIssue: HazardIssue = {
       id: `iss-${Date.now()}`,
       trackingId,
@@ -272,27 +296,31 @@ export default function ReportWizardPage() {
       location: {
         lat: coordinates.lat,
         lng: coordinates.lng,
-        address: `${ward}, Koramangala main arterial`,
+        address: `${ward}`,
         ward,
       },
       reportedAt: "Just now",
       slaMinutesRemaining: aiAnalysis?.recommendedSlaHours ? aiAnalysis.recommendedSlaHours * 60 : 240,
       slaFormatted: aiAnalysis?.recommendedSlaHours ? `${aiAnalysis.recommendedSlaHours}h 00m left` : "4h 00m left",
       status: "Pending",
-      beforePhoto:
-        photoUrl ||
-        "https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=600&auto=format&fit=crop&q=80",
+      beforePhoto: photoUrl,
       aiClassification: {
         detectedObject: aiAnalysis?.detectedObject || `${hazardType} (Manual Inspection)`,
         confidence: aiAnalysis?.confidence || (isManualOverride ? 100 : 90),
         hazardIndex: aiAnalysis?.hazardIndex || (severity >= 4 ? "Severe Roadway Hazard" : severity === 3 ? "Moderate Road Defect" : "Superficial Wear"),
-        impactDescription: description || aiAnalysis?.impactDescription || `Daily commuters affected: ${exposureCount}`,
+        impactDescription: description || aiAnalysis?.impactDescription || `Commuters affected proxy: ${exposureCount}`,
       },
       clarifications,
     };
 
-    addReportedIssue(newIssue);
-    voice.speak(`Report submitted successfully. Tracking ID is ${trackingId}`, language);
+    const res = await addReportedIssue(newIssue);
+    const successMsg = `${t("reportSuccess")} ${trackingId}`;
+    voice.speak(successMsg, language);
+
+    if (res.wasClustered) {
+      alert(`Notice: Your report matched an active hazard within 30 meters and was clustered to raise municipal priority.`);
+    }
+
     router.push("/my-reports");
   };
 
@@ -310,7 +338,7 @@ export default function ReportWizardPage() {
           </p>
         </div>
 
-        {/* Minimalist Step Indicator */}
+        {/* Step Indicator */}
         <div className="flex items-center gap-1.5">
           {[1, 2, 3].map((s) => (
             <div
@@ -348,7 +376,7 @@ export default function ReportWizardPage() {
                   </span>
                 </h2>
                 <p className="text-xs text-[#3E000C]/65 font-normal">
-                  Upload an image of the road damage. Gemini AI will analyze the cavity depth, determine if it needs fixing, and score its severity.
+                  Upload an authentic photo. Gemini AI will inspect cavity depth or lighting, verify if it is an authentic hazard, and score its severity.
                 </p>
               </div>
 
@@ -367,7 +395,7 @@ export default function ReportWizardPage() {
               )}
             </div>
 
-            {/* Photo Preview / Upload Area */}
+            {/* Photo Box */}
             <div className="border border-dashed border-[#3E000C]/25 hover:border-[#3E000C]/50 rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-colors bg-[#FFECD1]/20 min-h-[220px]">
               {photoUrl ? (
                 <div className="relative w-full max-h-[280px] overflow-hidden rounded-xl border border-[#3E000C]/15 bg-black/5 flex items-center justify-center">
@@ -379,13 +407,13 @@ export default function ReportWizardPage() {
 
                   {/* Scanning Animation */}
                   {isScanningPhoto && (
-                    <div className="absolute inset-0 bg-[#FFECD1]/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2 text-[#3E000C]">
+                    <div className="absolute inset-0 bg-[#FFECD1]/85 backdrop-blur-xs flex flex-col items-center justify-center gap-2 text-[#3E000C]">
                       <div className="relative w-12 h-12 flex items-center justify-center">
                         <Loader2 className="w-8 h-8 animate-spin text-[#3E000C]" />
                         <Sparkles className="w-4 h-4 text-[#3E000C] absolute" />
                       </div>
                       <span className="text-xs font-bold tracking-tight">Gemini AI is inspecting depth & severity score...</span>
-                      <span className="text-[11px] text-[#3E000C]/70">Checking cavity depth, commuter hazard risk & fix urgency</span>
+                      <span className="text-[11px] text-[#3E000C]/70">Checking cavity depth, streetlight lumens & fix urgency</span>
                     </div>
                   )}
                 </div>
@@ -398,7 +426,7 @@ export default function ReportWizardPage() {
                     <p className="text-sm font-bold text-[#3E000C]">
                       Drop hazard photo or browse
                     </p>
-                    <p className="text-xs text-[#3E000C]/60 mt-0.5">Supports JPG, PNG, WEBP, or live camera snap</p>
+                    <p className="text-xs text-[#3E000C]/60 mt-0.5">Supports JPG, PNG, WEBP (auto-compressed)</p>
                   </div>
                   <div className="flex items-center justify-center gap-3">
                     <label className="inline-flex">
@@ -427,7 +455,7 @@ export default function ReportWizardPage() {
               )}
             </div>
 
-            {/* AI Severity Inspection & Score Card */}
+            {/* AI Severity Inspection Card */}
             <div className="bg-[#FFECD1]/35 border border-[#3E000C]/15 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-[#3E000C]/10 pb-3">
                 <div className="flex items-center gap-2">
@@ -445,7 +473,7 @@ export default function ReportWizardPage() {
                 </span>
               </div>
 
-              {/* Main Two Metrics: Severity Score + Needs Fixing Status */}
+              {/* Severity Score + Needs Fixing Status */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* 1. Severity Score Gauge */}
                 <div className="bg-white p-4 rounded-xl border border-[#3E000C]/12 space-y-2.5">
@@ -454,7 +482,6 @@ export default function ReportWizardPage() {
                     <span className="text-base font-black text-[#3E000C]">{severity} / 5</span>
                   </div>
 
-                  {/* 5-step visual segments */}
                   <div className="grid grid-cols-5 gap-1.5 h-3">
                     {[1, 2, 3, 4, 5].map((lvl) => (
                       <div
@@ -473,7 +500,7 @@ export default function ReportWizardPage() {
                   </div>
 
                   <div className="text-[11px] font-semibold text-[#3E000C]">
-                    {severity === 1 && "Level 1: Minor Cosmetic Wear (Hairline crack)"}
+                    {severity === 1 && "Level 1: Minor Cosmetic Crack (No danger)"}
                     {severity === 2 && "Level 2: Shallow Depression (<3cm, Low danger)"}
                     {severity === 3 && "Level 3: Moderate Pothole (3-8cm, Vehicles brake)"}
                     {severity === 4 && "Level 4: Severe Cavity (>8cm, Wheel rim risk)"}
@@ -506,8 +533,8 @@ export default function ReportWizardPage() {
                     </div>
                     <p className="text-[11px] text-[#3E000C]/75 leading-tight">
                       {needsFixing
-                        ? "Urgent civic dispatch warranted. Cavity poses accident hazard to two-wheelers."
-                        : "Superficial surface wear. Commuters safe; logged for scheduled preventive maintenance."}
+                        ? "Urgent municipal dispatch warranted. Poses accident hazard to commuters."
+                        : "Superficial surface wear. Commuters safe; logged for scheduled maintenance."}
                     </p>
                   </div>
                 </div>
@@ -528,12 +555,12 @@ export default function ReportWizardPage() {
               {/* Status Message */}
               {aiMessage && (
                 <div className="text-xs text-[#3E000C]/85 bg-white p-2.5 rounded-xl border border-[#3E000C]/10 flex items-center gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-[#3E000C] shrink-0" />
+                  <Info className="w-3.5 h-3.5 text-[#3E000C] shrink-0" />
                   <span>{aiMessage}</span>
                 </div>
               )}
 
-              {/* Manual Severity Override Controls (Explicitly added as requested) */}
+              {/* Manual Severity Controls */}
               <div className="pt-2 border-t border-[#3E000C]/10 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#3E000C] flex items-center gap-1.5">
@@ -602,7 +629,13 @@ export default function ReportWizardPage() {
               <Button
                 variant="primary"
                 size="md"
-                onClick={() => setStep(2)}
+                onClick={() => {
+                  if (!photoUrl) {
+                    alert("Please select or snap a hazard photo to proceed.");
+                    return;
+                  }
+                  setStep(2);
+                }}
                 disabled={!photoUrl || isScanningPhoto}
                 rightIcon={<ArrowRight className="w-4 h-4" />}
               >
@@ -622,19 +655,19 @@ export default function ReportWizardPage() {
           >
             <div className="space-y-1">
               <h2 className="text-base font-bold text-[#3E000C]">
-                Step 2: Voice Dictation & Severity Review
+                Step 2: Voice Dictation & Description
               </h2>
               <p className="text-xs text-[#3E000C]/65 font-normal">
-                Review or adjust severity manually and dictate descriptions in your preferred language.
+                Dictate additional context or landmark details in {language}.
               </p>
             </div>
 
-            {/* Voice Dictation */}
+            {/* Voice Dictation (In dictation mode, VoiceBar ignores commands) */}
             <div className="bg-[#FFECD1]/20 p-4 rounded-2xl border border-[#3E000C]/12 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-[#3E000C] flex items-center gap-1.5">
                   <Mic className="w-3.5 h-3.5 text-[#3E000C] animate-pulse" />
-                  Voice Assistant ({language})
+                  Voice Dictation ({language})
                 </span>
                 <Button
                   variant={voice.isListening ? "danger" : "secondary"}
@@ -665,7 +698,7 @@ export default function ReportWizardPage() {
             {/* Manual Hazard Type Selector */}
             <div className="space-y-2">
               <label className="text-[11px] font-semibold text-[#3E000C]/60 uppercase tracking-wider block">
-                Classification Type
+                Hazard Classification
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
@@ -709,16 +742,16 @@ export default function ReportWizardPage() {
                 />
                 <p className="text-[11px] text-[#3E000C]/65">
                   {severity >= 4
-                    ? "Severe: High danger of 2-wheeler accidents."
+                    ? "Severe: High danger of two-wheeler accidents."
                     : severity === 3
                     ? "Moderate: Commuters must brake/swerve."
-                    : "Low: Superficial surface defect."}
+                    : "Low: Superficial surface wear."}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs font-semibold text-[#3E000C]">
-                  <span>Daily Commuters Impacted</span>
+                  <span>Daily Commuter Volume Proxy</span>
                   <span className="font-black text-sm">{exposureCount.toLocaleString()}</span>
                 </div>
                 <input
@@ -731,7 +764,7 @@ export default function ReportWizardPage() {
                   className="w-full accent-[#3E000C] cursor-pointer"
                 />
                 <p className="text-[11px] text-[#3E000C]/65">
-                  Used by Ward Officer to calculate priority repair order
+                  Estimated based on street transit corridor classification
                 </p>
               </div>
             </div>
@@ -770,7 +803,7 @@ export default function ReportWizardPage() {
                 Step 3: Location Pin & Final Submission
               </h2>
               <p className="text-xs text-[#3E000C]/65 font-normal">
-                Review GPS coordinates and calculated priority score before dispatching report.
+                Review GPS coordinates and calculated priority score before municipal dispatch.
               </p>
             </div>
 
@@ -809,11 +842,11 @@ export default function ReportWizardPage() {
               />
             </div>
 
-            {/* Clarification Questions */}
+            {/* Dynamic AI Clarification Questions */}
             <div className="bg-[#FFECD1]/20 p-4 rounded-2xl border border-[#3E000C]/12 space-y-3">
               <span className="text-xs font-semibold text-[#3E000C] flex items-center gap-1.5">
                 <HelpCircle className="w-3.5 h-3.5 text-[#3E000C]" />
-                Smart Clarification Prompts (Optional)
+                Follow-up Clarification Prompts (Optional)
               </span>
               {clarifications.map((item, idx) => (
                 <div key={idx} className="space-y-1">

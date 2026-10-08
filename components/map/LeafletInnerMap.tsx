@@ -5,14 +5,18 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+const defaultPinSvg = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="26" height="38" viewBox="0 0 26 38">
+  <path d="M13 1C6.37 1 1 6.37 1 13c0 9.5 12 24 12 24s12-14.5 12-24c0-6.63-5.37-12-12-12z" fill="#3E000C" stroke="#FFECD1" stroke-width="2"/>
+  <circle cx="13" cy="13" r="5" fill="#FFECD1"/>
+</svg>
+`)}`;
+
 const defaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [22, 36],
-  iconAnchor: [11, 36],
-  popupAnchor: [0, -32],
-  shadowSize: [36, 36],
+  iconUrl: defaultPinSvg,
+  iconSize: [26, 38],
+  iconAnchor: [13, 38],
+  popupAnchor: [0, -36],
 });
 
 export interface MapMarkerData {

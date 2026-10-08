@@ -50,6 +50,7 @@ export function useSpeech() {
   const [transcript, setTranscript] = useState<string>("");
   const [supported, setSupported] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [speechNotice, setSpeechNotice] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
@@ -79,10 +80,12 @@ export function useSpeech() {
           };
 
           instance.onerror = (event: SpeechRecognitionErrorEvent) => {
-            console.warn("Speech recognition notice:", event.error);
-            if (event.error !== "no-speech") {
-              setIsListening(false);
+            if (event.error === "not-allowed") {
+              setSpeechNotice("Microphone permission denied. Please allow microphone access or use text fallback.");
+            } else if (event.error !== "no-speech") {
+              console.warn("Speech recognition notice:", event.error);
             }
+            setIsListening(false);
           };
 
           instance.onend = () => {
@@ -111,25 +114,26 @@ export function useSpeech() {
   }, []);
 
   const startListening = useCallback(
-    (langCode: string = "en-US") => {
+    (langCode: string = "en-IN") => {
       if (!supported || !recognitionRef.current) {
-        console.warn("Speech Recognition not supported on this browser.");
+        setSpeechNotice("Speech recognition is not supported in this browser. Please use keyboard input.");
         return;
       }
 
-      // Map language code if simplified
-      let targetLang = langCode;
-      if (langCode === "EN") targetLang = "en-US";
-      if (langCode === "HI") targetLang = "hi-IN";
-      if (langCode === "TE") targetLang = "te-IN";
+      // Map language code to Indian locales
+      let targetLang = "en-IN";
+      if (langCode === "EN" || langCode === "en-IN" || langCode === "en-US") targetLang = "en-IN";
+      if (langCode === "HI" || langCode === "hi-IN") targetLang = "hi-IN";
+      if (langCode === "TE" || langCode === "te-IN") targetLang = "te-IN";
 
       try {
         setTranscript("");
+        setSpeechNotice(null);
         recognitionRef.current.lang = targetLang;
         recognitionRef.current.start();
         setIsListening(true);
       } catch (err) {
-        console.warn("Speech recognition start failed or already active:", err);
+        console.warn("Speech recognition start notice:", err);
       }
     },
     [supported]
@@ -147,7 +151,7 @@ export function useSpeech() {
   }, []);
 
   const speak = useCallback(
-    (text: string, langCode: string = "en-US") => {
+    (text: string, langCode: string = "en-IN") => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         console.warn("Speech Synthesis not supported in this browser.");
         return;
@@ -157,14 +161,23 @@ export function useSpeech() {
         window.speechSynthesis.cancel(); // Cancel ongoing speech
 
         const utterance = new SpeechSynthesisUtterance(text);
-        let targetLang = langCode;
-        if (langCode === "EN") targetLang = "en-US";
-        if (langCode === "HI") targetLang = "hi-IN";
-        if (langCode === "TE") targetLang = "te-IN";
+        let targetLang = "en-IN";
+        if (langCode === "EN" || langCode === "en-IN") targetLang = "en-IN";
+        if (langCode === "HI" || langCode === "hi-IN") targetLang = "hi-IN";
+        if (langCode === "TE" || langCode === "te-IN") targetLang = "te-IN";
 
         utterance.lang = targetLang;
-        utterance.rate = 1.0;
+        utterance.rate = 0.95;
         utterance.pitch = 1.0;
+
+        // Try to pick matching Indian voice if available in OS
+        const voices = window.speechSynthesis.getVoices();
+        const matchingVoice = voices.find(
+          (v) => v.lang === targetLang || v.lang.startsWith(targetLang.split("-")[0])
+        );
+        if (matchingVoice) {
+          utterance.voice = matchingVoice;
+        }
 
         utterance.onstart = () => setIsSpeaking(true);
         utterance.onend = () => setIsSpeaking(false);
@@ -185,6 +198,8 @@ export function useSpeech() {
     setTranscript,
     supported,
     isSpeaking,
+    speechNotice,
+    setSpeechNotice,
     startListening,
     stopListening,
     speak,

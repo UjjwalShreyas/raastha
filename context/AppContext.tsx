@@ -1,8 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { TRANSLATIONS, HazardIssue, MOCK_ISSUES, MOCK_CITIZEN_HISTORY } from "@/lib/mockData";
+import { TRANSLATIONS, HazardIssue, MOCK_ISSUES, MOCK_CITIZEN_HISTORY, MOCK_BASE_COORDINATES } from "@/lib/mockData";
 import { useSpeech } from "@/hooks/useSpeech";
+import { useGeolocation } from "@/hooks/useGeolocation";
 
 export type LanguageCode = "EN" | "HI" | "TE";
 
@@ -12,8 +13,15 @@ interface AppContextType {
   setLanguage: (lang: LanguageCode) => void;
   t: (key: string) => string;
 
-  // Voice
+  // Single Geolocation Source (No multiple GPS prompts)
+  coordinates: { lat: number; lng: number };
+  locationAccuracy: number | null;
+  locationError: string | null;
+
+  // Voice & Modes (Command mode vs Dictation mode)
   voice: ReturnType<typeof useSpeech>;
+  voiceMode: "command" | "dictation";
+  setVoiceMode: (mode: "command" | "dictation") => void;
   voiceCommandToast: string | null;
   setVoiceCommandToast: (msg: string | null) => void;
 
@@ -36,11 +44,11 @@ interface AppContextType {
   highPriorityToast: string | null;
   setHighPriorityToast: (msg: string | null) => void;
 
-  // Role Authentication (Citizen vs Ward Officer)
-  userRole: "citizen" | "authority";
-  setUserRole: (role: "citizen" | "authority") => void;
+  // Authority Authentication Gate
+  isOfficerAuthenticated: boolean;
+  setOfficerAuthenticated: (val: boolean) => void;
 
-  // Emergency SOS Toast
+  // Emergency SOS
   sosActive: boolean;
   triggerSOS: () => void;
   dismissSOS: () => void;
@@ -81,17 +89,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [voiceCommandToast, setVoiceCommandToast] = useState<string | null>(null);
   const [sosActive, setSosActive] = useState<boolean>(false);
 
-  // Authority & Real-Time Sync
-  const [userRole, setUserRole] = useState<"citizen" | "authority">("citizen");
+  // Voice Modes: 'command' (VoiceBar) vs 'dictation' (forms)
+  const [voiceMode, setVoiceMode] = useState<"command" | "dictation">("command");
+
+  // Authority Authentication Gate (passkey GHMC-2026)
+  const [isOfficerAuthenticated, setOfficerAuthenticated] = useState<boolean>(false);
+
+  // Real-Time Notifications
   const [unreadAlertCount, setUnreadAlertCount] = useState<number>(0);
   const [highPriorityToast, setHighPriorityToast] = useState<string | null>(null);
 
+  // Single consolidated Geolocation call (fallback to Hyderabad Hitec City: 17.4401, 78.3489)
+  const geo = useGeolocation();
+  const coordinates = {
+    lat: geo.coordinates.lat || MOCK_BASE_COORDINATES[0],
+    lng: geo.coordinates.lng || MOCK_BASE_COORDINATES[1],
+  };
+
   const voice = useSpeech();
 
-  const t = (key: string): string => {
-    const langDict = TRANSLATIONS[language] || TRANSLATIONS.EN;
-    return langDict[key] || TRANSLATIONS.EN[key] || key;
-  };
+  const t = useCallback(
+    (key: string): string => {
+      const langDict = TRANSLATIONS[language] || TRANSLATIONS.EN;
+      return langDict[key] || TRANSLATIONS.EN[key] || key;
+    },
+    [language]
+  );
 
   // Fetch reports from backend
   const refreshIssues = useCallback(async () => {
@@ -101,7 +124,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         if (data.success && Array.isArray(data.issues)) {
           setIssues((prev) => {
-            // Check for newly added high-priority issues (Level 4 or 5)
             const prevIds = new Set(prev.map((i) => i.id));
             const newHighPriority = data.issues.filter(
               (i: HazardIssue) => !prevIds.has(i.id) && i.severity >= 4 && i.status !== "Resolved"
@@ -124,6 +146,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Sync document html lang attribute with current language
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = language === "HI" ? "hi" : language === "TE" ? "te" : "en";
+    }
+  }, [language]);
+
   // Poll backend every 6 seconds for multi-device sync
   useEffect(() => {
     refreshIssues();
@@ -132,7 +161,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshIssues]);
 
   const addReportedIssue = async (newIssue: HazardIssue): Promise<{ wasClustered: boolean }> => {
-    // Optimistic local update
     setIssues((prev) => [newIssue, ...prev]);
     setCitizenHistory((prev) => [newIssue, ...prev]);
 
@@ -151,7 +179,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (e) {
-      console.warn("Report sync to server queued:", e);
+      console.warn("Report sync to server notice:", e);
     }
 
     return { wasClustered: false };
@@ -163,7 +191,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     afterPhoto?: string,
     notes?: string
   ) => {
-    // Optimistic local update
     setIssues((prev) =>
       prev.map((issue) => {
         if (issue.id === id) {
@@ -202,7 +229,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const triggerSOS = () => {
     setSosActive(true);
-    voice.speak("Emergency SOS Activated. Dispatching nearest civic patrol units.", language);
+    voice.speak(t("sosActivated"), language);
   };
 
   const dismissSOS = () => {
@@ -215,7 +242,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         language,
         setLanguage,
         t,
+        coordinates,
+        locationAccuracy: geo.accuracy,
+        locationError: geo.error,
         voice,
+        voiceMode,
+        setVoiceMode,
         voiceCommandToast,
         setVoiceCommandToast,
         issues,
@@ -228,8 +260,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearUnreadAlerts,
         highPriorityToast,
         setHighPriorityToast,
-        userRole,
-        setUserRole,
+        isOfficerAuthenticated,
+        setOfficerAuthenticated,
         sosActive,
         triggerSOS,
         dismissSOS,

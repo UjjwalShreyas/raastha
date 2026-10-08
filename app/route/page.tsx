@@ -13,17 +13,16 @@ import {
   CheckCircle,
   Loader2,
   Zap,
+  Info,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { useGeolocation } from "@/hooks/useGeolocation";
 import { DynamicMap } from "@/components/map/DynamicMap";
 import { MOCK_DESTINATIONS, MOCK_BASE_COORDINATES } from "@/lib/mockData";
 import { fetchOsrmRoute, ComputedRoute } from "@/lib/routingEngine";
 import { Button } from "@/components/ui/Button";
 
 export default function SafeRoutePage() {
-  const { language, voice, triggerSOS, issues } = useApp();
-  const { coordinates } = useGeolocation();
+  const { language, voice, triggerSOS, issues, coordinates, t } = useApp();
 
   const [selectedDestIndex, setSelectedDestIndex] = useState<number>(0);
   const [selectedRouteId, setSelectedRouteId] = useState<"fastest" | "safest">("safest");
@@ -69,16 +68,16 @@ export default function SafeRoutePage() {
 
   const activeRoute = routes ? routes[selectedRouteId] : null;
   const turnByTurnSteps = activeRoute?.turnByTurn || [
-    { text: "Head east on 80 Feet Road arterial corridor", dist: "300m" },
-    { text: "Continue straight along fully lit 100 Feet Corridor", dist: "600m" },
-    { text: "Arrive at destination safely", dist: "400m" },
+    { text: "Head east on Hitec City Main Road corridor", dist: "350m" },
+    { text: "Continue straight along fully lit Madhapur 100 Feet Corridor", dist: "700m" },
+    { text: "Arrive at destination safely", dist: "450m" },
   ];
 
   const handleStartNavigation = () => {
     setIsNavigating(true);
     setCurrentStepIndex(0);
     if (activeRoute) {
-      const textToSpeak = `Starting safe corridor navigation to ${destination.name}. Safety score is ${activeRoute.safetyScore} out of 100. ${activeRoute.description}`;
+      const textToSpeak = `${t("navStart")} ${destination.name}. Safety score is ${activeRoute.safetyScore} out of 100.`;
       if (!audioNavigationMuted) {
         voice.speak(textToSpeak, language);
       }
@@ -94,7 +93,7 @@ export default function SafeRoutePage() {
       }
     } else {
       setIsNavigating(false);
-      voice.speak("You have arrived at your destination via the safe corridor!", language);
+      voice.speak(t("navArrived"), language);
     }
   };
 
@@ -119,7 +118,7 @@ export default function SafeRoutePage() {
   const startMarker = {
     lat: coordinates.lat || MOCK_BASE_COORDINATES[0],
     lng: coordinates.lng || MOCK_BASE_COORDINATES[1],
-    title: "Your Location",
+    title: "Your GPS Location",
     type: "start",
   };
 
@@ -147,10 +146,10 @@ export default function SafeRoutePage() {
         <div>
           <h1 className="text-2xl font-bold text-[#3E000C] flex items-center gap-2.5">
             <Navigation className="w-6 h-6 text-[#3E000C]" />
-            <span>Safe Corridor Navigation</span>
+            <span>Safe Corridor Navigation (Hyderabad)</span>
           </h1>
           <p className="text-[#3E000C]/65 text-xs mt-1">
-            OSRM-powered real-time pathfinding re-ranked by streetlighting LUX levels and proximity to reported road hazards
+            OSRM pathfinding re-ranked by streetlighting LUX levels and proximity to reported road hazards
           </p>
         </div>
 
@@ -189,7 +188,7 @@ export default function SafeRoutePage() {
           {/* Destination Selector */}
           <div className="bg-[#FFFFFF]/80 border border-[#3E000C]/12 rounded-2xl p-4 space-y-2.5 shadow-2xs">
             <label className="text-[11px] font-bold text-[#3E000C]/60 uppercase tracking-wider block">
-              Select Destination
+              Select Destination in Hyderabad
             </label>
             <div className="space-y-1.5">
               {MOCK_DESTINATIONS.map((dest, idx) => (
@@ -246,7 +245,7 @@ export default function SafeRoutePage() {
                 {/* 1. Safe Corridor Card */}
                 <div
                   onClick={() => setSelectedRouteId("safest")}
-                  className={`p-4 rounded-2xl border cursor-pointer transition-colors shadow-2xs ${
+                  className={`p-4 rounded-2xl border cursor-pointer transition-colors shadow-2xs space-y-2 ${
                     selectedRouteId === "safest"
                       ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C]"
                       : "bg-[#FFFFFF]/80 border-[#3E000C]/12 text-[#3E000C] hover:border-[#3E000C]/30"
@@ -268,11 +267,21 @@ export default function SafeRoutePage() {
                     </span>
                   </div>
 
-                  <p className="text-xs mt-1.5 opacity-80 leading-relaxed font-normal">
+                  <p className="text-xs opacity-80 leading-relaxed font-normal">
                     {routes.safest.description}
                   </p>
 
-                  <div className="flex items-center gap-4 mt-3 pt-2.5 border-t border-current/15 text-xs font-mono">
+                  {/* Computed Reasons */}
+                  <div className="space-y-1 pt-1">
+                    {routes.safest.safetyReasons.map((reason, idx) => (
+                      <div key={idx} className="text-[11px] flex items-center gap-1.5 opacity-90">
+                        <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>{reason}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-4 pt-2 border-t border-current/15 text-xs font-mono">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 opacity-70" />
                       {routes.safest.duration}
@@ -281,16 +290,13 @@ export default function SafeRoutePage() {
                       <MapPin className="w-3.5 h-3.5 opacity-70" />
                       {routes.safest.distance}
                     </span>
-                    <span className="opacity-90 font-sans text-[11px]">
-                      Avoids {routes.safest.hazardsAvoided} active hazards
-                    </span>
                   </div>
                 </div>
 
                 {/* 2. Fastest Shortcut Card */}
                 <div
                   onClick={() => setSelectedRouteId("fastest")}
-                  className={`p-4 rounded-2xl border cursor-pointer transition-colors shadow-2xs ${
+                  className={`p-4 rounded-2xl border cursor-pointer transition-colors shadow-2xs space-y-2 ${
                     selectedRouteId === "fastest"
                       ? "bg-[#3E000C] text-[#FFECD1] border-[#3E000C]"
                       : "bg-[#FFFFFF]/80 border-[#3E000C]/12 text-[#3E000C] hover:border-[#3E000C]/30"
@@ -312,11 +318,21 @@ export default function SafeRoutePage() {
                     </span>
                   </div>
 
-                  <p className="text-xs mt-1.5 opacity-80 leading-relaxed font-normal">
+                  <p className="text-xs opacity-80 leading-relaxed font-normal">
                     {routes.fastest.description}
                   </p>
 
-                  <div className="flex items-center gap-4 mt-3 pt-2.5 border-t border-current/15 text-xs font-mono">
+                  {/* Computed Reasons */}
+                  <div className="space-y-1 pt-1">
+                    {routes.fastest.safetyReasons.map((reason, idx) => (
+                      <div key={idx} className="text-[11px] flex items-center gap-1.5 opacity-80">
+                        <Info className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>{reason}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-4 pt-2 border-t border-current/15 text-xs font-mono">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 opacity-70" />
                       {routes.fastest.duration}
@@ -324,9 +340,6 @@ export default function SafeRoutePage() {
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 opacity-70" />
                       {routes.fastest.distance}
-                    </span>
-                    <span className="opacity-75 font-sans text-[11px]">
-                      Passes near reported potholes
                     </span>
                   </div>
                 </div>
