@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppProvider } from "@/context/AppContext";
 import { LocationProvider } from "@/context/LocationContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { IssuesProvider } from "@/context/IssuesContext";
 import { Navbar } from "@/components/Navbar";
 import { VoiceBar } from "@/components/ui/VoiceBar";
@@ -25,17 +26,19 @@ export default function RootLayout({
       className="h-full antialiased"
     >
       <body className="min-h-full flex flex-col bg-[#FFECD1] text-[#3E000C] font-[Inter,system-ui,Arial,sans-serif] selection:bg-[#3E000C] selection:text-[#FFECD1]">
-        <LocationProvider>
-          <IssuesProvider>
-            <AppProvider>
-              <Navbar />
-              <ToastBanner />
-              <main className="flex-1 pb-24 relative">{children}</main>
-              <VoiceBar />
-              <SOSModal />
-            </AppProvider>
-          </IssuesProvider>
-        </LocationProvider>
+        <AuthProvider>
+          <LocationProvider>
+            <IssuesProvider>
+              <AppProvider>
+                <Navbar />
+                <ToastBanner />
+                <main className="flex-1 pb-24 relative">{children}</main>
+                <VoiceBar />
+                <SOSModal />
+              </AppProvider>
+            </IssuesProvider>
+          </LocationProvider>
+        </AuthProvider>
       </body>
     </html>
   );

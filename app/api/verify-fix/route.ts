@@ -1,146 +1,113 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const MAX_IMAGE_BASE64_CHARS = 6_000_000; // ~4.5 MB of image data
+const TIMEOUT_MS = 20_000;
+
+/** Only signed-in authorities may spend Gemini quota on fix verification. */
+async function getAuthority(req: NextRequest) {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!token || !url || !anon) return null;
+  const client = createClient(url, anon, { auth: { persistSession: false } });
+  const { data, error } = await client.auth.getUser(token);
+  return error ? null : data.user;
+}
+
+function unavailable(reason: string) {
+  // Never invent a verdict. The officer decides manually when AI is unavailable.
+  return NextResponse.json({ available: false, reason });
+}
 
 export async function POST(req: NextRequest) {
+  const user = await getAuthority(req);
+  if (!user) {
+    return NextResponse.json({ available: false, reason: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: { afterImage?: string; hazardType?: string };
   try {
-    const body = await req.json();
-    const { beforeImage, afterImage, hazardType = "Pothole" } = body;
+    body = await req.json();
+  } catch {
+    return unavailable("Invalid request body.");
+  }
 
-    if (!afterImage) {
-      return NextResponse.json(
-        { success: false, error: "After photo is required for fix verification." },
-        { status: 400 }
-      );
-    }
+  const { afterImage, hazardType = "road hazard" } = body;
+  if (!afterImage) return unavailable("After photo is required.");
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL;
+  if (!apiKey || !model) return unavailable("AI service is not configured on the server.");
 
-    if (!apiKey) {
-      // Intelligent civil engineering heuristic fallback
-      return NextResponse.json({
-        success: true,
-        source: "fallback",
-        verification: {
-          verified: true,
-          confidence: 91,
-          verdict: "Fix Verified & Approved",
-          patchQuality: "Adequate",
-          civilNotes:
-            "Visual inspection confirms asphalt overlay has properly leveled the road cavity. Surface gradation aligns with arterial street standard.",
-        },
-      });
-    }
+  const match = afterImage.match(/^data:(image\/[a-zA-Z+.-]+);base64,(.+)$/);
+  if (!match) return unavailable("After photo must be a base64 image data URL.");
+  const [, mimeType, base64] = match;
+  if (base64.length > MAX_IMAGE_BASE64_CHARS) return unavailable("After photo is too large.");
 
-    const cleanAfter = afterImage.replace(/^data:image\/[a-z]+;base64,/, "");
+  const prompt = `You assist a municipal engineer reviewing a photo submitted as proof that a reported ${hazardType} was repaired.
+Judge only what is visible. This is an estimate to support a human decision, not a certification.
+Return JSON: repaired (boolean: true only if the defect looks fixed), confidence (0 to 1), summary (one or two plain sentences).
+If the photo is unclear, unrelated, or does not show a road/streetlight, set repaired to false and say why.`;
 
-    const promptText = `
-You are an expert civil engineering quality assurance auditor for city municipal road works.
-Analyze this photo submitted by a municipal ward contractor as proof of repair for a reported ${hazardType}.
-Evaluate:
-1. Is the road damage/pothole properly patched, sealed, and leveled with asphalt or masonry?
-2. Does it look genuinely repaired without gaping cavities or loose hazardous rubble?
-3. "verified": boolean (true if properly repaired, false if defect remains unaddressed).
-4. "confidence": number (70-99).
-5. "verdict": "Fix Verified & Approved" or "Fix Inadequate - Re-dispatch Required".
-6. "patchQuality": "Adequate" or "Defective".
-7. "civilNotes": 1-2 sentences summarizing your engineering assessment of the asphalt leveling and commuter safety.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-Return valid JSON only:
-{
-  "verified": true,
-  "confidence": 94,
-  "verdict": "Fix Verified & Approved",
-  "patchQuality": "Adequate",
-  "civilNotes": "..."
-}
-`;
-
-    const modelCandidates = [
-      "gemini-3.5-flash",
-      "gemini-3.7-flash",
-      "gemini-flash-latest",
-      "gemini-2.5-flash",
-    ];
-
-    let apiResponse: Response | null = null;
-
-    for (const model of modelCandidates) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { text: promptText },
-                  {
-                    inline_data: {
-                      mime_type: "image/jpeg",
-                      data: cleanAfter,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.2,
-              response_mime_type: "application/json",
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64 } }],
             },
-          }),
-        });
-
-        if (res.ok) {
-          apiResponse = res;
-          break;
-        }
-      } catch (e) {
-        console.warn(`Verify fix error on ${model}:`, e);
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                repaired: { type: "BOOLEAN" },
+                confidence: { type: "NUMBER" },
+                summary: { type: "STRING" },
+              },
+              required: ["repaired", "confidence", "summary"],
+            },
+          },
+        }),
       }
+    );
+
+    if (!res.ok) return unavailable(`AI service returned ${res.status}.`);
+
+    const data = await res.json();
+    const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) return unavailable("AI returned no result.");
+
+    const parsed = JSON.parse(text);
+    if (
+      typeof parsed.repaired !== "boolean" ||
+      typeof parsed.confidence !== "number" ||
+      typeof parsed.summary !== "string"
+    ) {
+      return unavailable("AI returned an unexpected format.");
     }
-
-    if (!apiResponse || !apiResponse.ok) {
-      return NextResponse.json({
-        success: true,
-        source: "fallback",
-        verification: {
-          verified: true,
-          confidence: 88,
-          verdict: "Fix Verified & Approved",
-          patchQuality: "Adequate",
-          civilNotes:
-            "Automated inspection indicates asphalt leveling completed. Street is reopened for normal commuter transit.",
-        },
-      });
-    }
-
-    const data = await apiResponse.json();
-    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-    const jsonStr = candidateText
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-
-    const parsed = JSON.parse(jsonStr);
 
     return NextResponse.json({
-      success: true,
-      source: "gemini",
-      verification: {
-        verified: typeof parsed.verified === "boolean" ? parsed.verified : true,
-        confidence: Number(parsed.confidence) || 92,
-        verdict: parsed.verdict || "Fix Verified & Approved",
-        patchQuality: parsed.patchQuality || "Adequate",
-        civilNotes:
-          parsed.civilNotes ||
-          "Asphalt compaction verified. The hazard has been safely neutralized.",
-      },
+      available: true,
+      repaired: parsed.repaired,
+      confidence: Math.min(1, Math.max(0, parsed.confidence)),
+      summary: parsed.summary,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || "Failed to verify fix photo." },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    return unavailable(aborted ? "AI request timed out." : "AI request failed.");
+  } finally {
+    clearTimeout(timer);
   }
 }

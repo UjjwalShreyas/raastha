@@ -6,13 +6,17 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useMemo,
+  useRef,
   ReactNode,
 } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { isHighSeverityAlertable } from "@/lib/dispatch";
 
 export type IssueType = "pothole" | "streetlight" | "garbage" | "waterlogging" | "other";
 export type IssueStatus = "reported" | "dispatched" | "in_progress" | "resolved" | "rejected";
 export type SeveritySource = "ai" | "manual";
+export type RealtimeStatus = "offline" | "connecting" | "live" | "polling";
 
 export interface Issue {
   id: string;
@@ -31,6 +35,10 @@ export interface Issue {
   created_at: string;
   updated_at: string;
   is_sample?: boolean;
+  /** Reporter's own estimate of daily commuters (not measured). */
+  commuter_estimate?: number;
+  assignee?: string | null;
+  sla_due_at?: string | null;
 }
 
 export interface AddIssueInput {
@@ -43,11 +51,17 @@ export interface AddIssueInput {
   ward?: string;
   photo: File; // Required photo File
   aiSummary?: string;
+  commuterEstimate?: number;
 }
 
 export interface UpdateStatusOptions {
-  afterPhoto?: File | string;
+  /** Repair proof (required by the database when resolving). */
+  afterPhoto?: File;
   note?: string;
+  /** Required when dispatching. */
+  assignee?: string;
+  /** Required when dispatching (ISO timestamp). */
+  slaDueAt?: string;
 }
 
 export interface IssuesContextType {
@@ -55,45 +69,33 @@ export interface IssuesContextType {
   isLoading: boolean;
   isConfigured: boolean;
   error: string | null;
+  realtimeStatus: RealtimeStatus;
   refreshIssues: () => Promise<void>;
   addReportedIssue: (input: AddIssueInput) => Promise<Issue>;
+  /** Requires a signed-in authority; the database enforces the same rule. */
   updateIssueStatus: (
     id: string,
     status: IssueStatus,
     options?: UpdateStatusOptions
   ) => Promise<void>;
+  /** Newest severity 4-5 report that arrived live since this page loaded. */
   latestAlert: Issue | null;
   clearAlert: () => void;
+  /** Severity 4-5, still 'reported', real (non-sample) and not yet acknowledged. */
+  unseenHighCount: number;
+  unseenHighIds: string[];
+  markHighSeen: (id: string) => void;
+  markAllHighSeen: () => void;
 }
 
 const IssuesContext = createContext<IssuesContextType | undefined>(undefined);
 
-// Web Audio API civic chime on high severity alert (4 or 5)
-function playHighAlertChime() {
-  if (typeof window === "undefined") return;
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+const SEEN_STORAGE_KEY = "raastha.seenHighSeverity.v1";
+const POLL_INTERVAL_MS = 10_000;
 
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.35);
-  } catch (err) {
-    console.warn("Chime playback error:", err);
-  }
-}
-
-// Initial starter data for Hyderabad (explicitly labelled Sample data)
+// Starter data for Hyderabad (explicitly labelled Sample data). Only visible
+// when Supabase is not configured or before the first fetch completes; the
+// database rows replace it. Optional DB seeding lives in supabase/seed.sql.
 const INITIAL_DEMO_ISSUES: Issue[] = [
   {
     id: "3e0c0001-0000-4000-8000-000000000001",
@@ -112,6 +114,7 @@ const INITIAL_DEMO_ISSUES: Issue[] = [
     created_at: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
     updated_at: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
     is_sample: true,
+    commuter_estimate: 6500,
   },
   {
     id: "3e0c0002-0000-4000-8000-000000000002",
@@ -130,6 +133,7 @@ const INITIAL_DEMO_ISSUES: Issue[] = [
     created_at: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
     updated_at: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
     is_sample: true,
+    commuter_estimate: 4000,
   },
   {
     id: "3e0c0003-0000-4000-8000-000000000003",
@@ -148,16 +152,60 @@ const INITIAL_DEMO_ISSUES: Issue[] = [
     created_at: new Date(Date.now() - 180 * 60 * 1000).toISOString(),
     updated_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     is_sample: true,
+    commuter_estimate: 5000,
   },
 ];
+
+function readSeenIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(SEEN_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export function IssuesProvider({ children }: { children: ReactNode }) {
   const [issues, setIssues] = useState<Issue[]>(INITIAL_DEMO_ISSUES);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [latestAlert, setLatestAlert] = useState<Issue | null>(null);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>(
+    isSupabaseConfigured ? "connecting" : "offline"
+  );
+  const [seenIds, setSeenIds] = useState<string[]>([]);
 
-  // Fetch all issues from Supabase (or fallback)
+  // Ids we have already accounted for, so each new report alerts exactly once
+  // regardless of whether it arrives via realtime or via polling.
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const initializedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    setSeenIds(readSeenIds());
+  }, []);
+
+  const persistSeen = useCallback((next: string[]) => {
+    setSeenIds(next);
+    try {
+      // Keep the list bounded
+      window.localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(next.slice(-500)));
+    } catch {
+      /* storage unavailable: seen state just won't persist */
+    }
+  }, []);
+
+  /** Register a newly arrived row; alert if it is a live, high-severity report. */
+  const ingestArrival = useCallback((row: Issue) => {
+    if (knownIdsRef.current.has(row.id)) return;
+    knownIdsRef.current.add(row.id);
+    setIssues((prev) => (prev.some((i) => i.id === row.id) ? prev : [row, ...prev]));
+    if (isHighSeverityAlertable(row)) {
+      setLatestAlert(row);
+    }
+  }, []);
+
   const refreshIssues = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
       setIsLoading(false);
@@ -174,7 +222,22 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
         console.warn("Supabase fetch issues error:", fetchErr.message);
         setError(fetchErr.message);
       } else if (data) {
-        setIssues(data as Issue[]);
+        const rows = data as Issue[];
+        setError(null);
+
+        if (!initializedRef.current) {
+          // First load: everything already existing is "known", no alerts.
+          rows.forEach((r) => knownIdsRef.current.add(r.id));
+          initializedRef.current = true;
+        } else {
+          // Later loads (polling fallback / tab refocus): alert on genuinely new rows.
+          const fresh = rows.filter((r) => !knownIdsRef.current.has(r.id));
+          fresh.forEach((r) => knownIdsRef.current.add(r.id));
+          const newestHigh = fresh.find(isHighSeverityAlertable);
+          if (newestHigh) setLatestAlert(newestHigh);
+        }
+
+        setIssues(rows);
       }
     } catch (e: any) {
       console.warn("Could not load issues:", e.message);
@@ -184,33 +247,21 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Initial load and Realtime setup
+  // Initial load + Realtime subscription
   useEffect(() => {
     refreshIssues();
 
     if (!isSupabaseConfigured || !supabase) {
       return;
     }
+    const client = supabase;
 
-    // Subscribe to Postgres changes on the issues table
-    const channel = supabase
+    const channel = client
       .channel("realtime-issues-feed")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "issues" },
-        (payload) => {
-          const newRow = payload.new as Issue;
-          setIssues((prev) => {
-            if (prev.some((item) => item.id === newRow.id)) return prev;
-            return [newRow, ...prev];
-          });
-
-          // Alert for high severity hazards (severity 4 or 5)
-          if (newRow.severity >= 4 && newRow.status !== "resolved") {
-            setLatestAlert(newRow);
-            playHighAlertChime();
-          }
-        }
+        (payload) => ingestArrival(payload.new as Issue)
       )
       .on(
         "postgres_changes",
@@ -218,7 +269,7 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
         (payload) => {
           const updatedRow = payload.new as Issue;
           setIssues((prev) =>
-            prev.map((item) => (item.id === updatedRow.id ? updatedRow : item))
+            prev.map((item) => (item.id === updatedRow.id ? { ...item, ...updatedRow } : item))
           );
         }
       )
@@ -232,14 +283,33 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeStatus("live");
+          // Catch anything that arrived while the socket was (re)connecting
+          refreshIssues();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setRealtimeStatus("polling");
+        }
+      });
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshIssues();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
-      if (supabase) {
-        supabase.removeChannel(channel);
-      }
+      document.removeEventListener("visibilitychange", onVisible);
+      client.removeChannel(channel);
     };
-  }, [refreshIssues]);
+  }, [refreshIssues, ingestArrival]);
+
+  // Polling fallback only when the realtime socket is unavailable
+  useEffect(() => {
+    if (realtimeStatus !== "polling") return;
+    const timer = setInterval(refreshIssues, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [realtimeStatus, refreshIssues]);
 
   // Add report with required photo File
   const addReportedIssue = async (input: AddIssueInput): Promise<Issue> => {
@@ -248,7 +318,7 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
     }
 
     if (!isSupabaseConfigured || !supabase) {
-      // Offline / unconfigured fallback: create mock object with local object URL
+      // Unconfigured fallback: local-only row (not shared with other devices)
       const fallbackPhotoUrl = URL.createObjectURL(input.photo);
       const randTracking = "RST-" + Math.random().toString(36).substring(2, 10).toUpperCase();
       const mockRow: Issue = {
@@ -260,24 +330,22 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
         description: input.description || null,
         lat: input.lat,
         lng: input.lng,
-        ward: input.ward || "Circle 20 - Madhapur / Serilingampally, Hyderabad",
+        ward: input.ward || null,
         photo_url: fallbackPhotoUrl,
         after_photo_url: null,
         ai_summary: input.aiSummary || null,
         status: "reported",
+        commuter_estimate: input.commuterEstimate,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
+      knownIdsRef.current.add(mockRow.id);
       setIssues((prev) => [mockRow, ...prev]);
-      if (mockRow.severity >= 4) {
-        setLatestAlert(mockRow);
-        playHighAlertChime();
-      }
       return mockRow;
     }
 
-    // 1. Upload photo File to Supabase Storage bucket 'issue-photos'
+    // 1. Upload photo to Storage (citizens may only write under issues/)
     const fileExt = input.photo.name.split(".").pop() || "jpg";
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
     const storagePath = `issues/${fileName}`;
@@ -290,16 +358,14 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
       });
 
     if (uploadErr) {
-      console.warn("Storage upload failed, attempting public bucket URL anyway:", uploadErr.message);
+      // Never store a device-local blob: URL; other devices could not load it.
+      throw new Error(`Photo upload failed: ${uploadErr.message}`);
     }
 
-    const { data: urlData } = supabase.storage
-      .from("issue-photos")
-      .getPublicUrl(storagePath);
+    const { data: urlData } = supabase.storage.from("issue-photos").getPublicUrl(storagePath);
 
-    const publicPhotoUrl = urlData?.publicUrl || URL.createObjectURL(input.photo);
-
-    // 2. Insert into 'issues' table (tracking_id generated automatically by DB default)
+    // 2. Insert into 'issues' (tracking_id by DB default; the DB trigger writes
+    //    the initial 'reported' status_events row)
     const { data: insertedIssue, error: insertErr } = await supabase
       .from("issues")
       .insert([
@@ -310,9 +376,10 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
           description: input.description || null,
           lat: input.lat,
           lng: input.lng,
-          ward: input.ward || "Circle 20 - Madhapur / Serilingampally, Hyderabad",
-          photo_url: publicPhotoUrl,
+          ward: input.ward || null,
+          photo_url: urlData.publicUrl,
           ai_summary: input.aiSummary || null,
+          commuter_estimate: input.commuterEstimate ?? 3500,
           status: "reported",
         },
       ])
@@ -323,127 +390,98 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
       throw new Error(insertErr?.message || "Failed to save issue into database.");
     }
 
-    // 3. Insert into 'status_events' audit trail
-    try {
-      await supabase.from("status_events").insert([
-        {
-          issue_id: insertedIssue.id,
-          status: "reported",
-          note: "Citizen report submitted",
-        },
-      ]);
-    } catch (auditErr) {
-      console.warn("Status event audit notice:", auditErr);
-    }
-
     const finalRow = insertedIssue as Issue;
 
-    // Optimistically update local state if realtime takes a moment
-    setIssues((prev) => {
-      if (prev.some((i) => i.id === finalRow.id)) return prev;
-      return [finalRow, ...prev];
-    });
-
-    if (finalRow.severity >= 4) {
-      setLatestAlert(finalRow);
-      playHighAlertChime();
-    }
+    // Show it locally right away. Mark it known so the reporter's own device
+    // never raises an authority alert for its own submission.
+    knownIdsRef.current.add(finalRow.id);
+    setIssues((prev) => (prev.some((i) => i.id === finalRow.id) ? prev : [finalRow, ...prev]));
 
     return finalRow;
   };
 
-  // Update status (e.g. dispatch squad, verify resolution)
+  // Change status (dispatch -> in_progress -> resolved). Authority only.
   const updateIssueStatus = async (
     id: string,
     status: IssueStatus,
     options?: UpdateStatusOptions
   ): Promise<void> => {
-    let afterPhotoUrl: string | undefined = undefined;
-
-    if (options?.afterPhoto) {
-      if (typeof options.afterPhoto === "string") {
-        afterPhotoUrl = options.afterPhoto;
-      } else if (isSupabaseConfigured && supabase) {
-        // Upload repair photo File
-        const fileExt = options.afterPhoto.name.split(".").pop() || "jpg";
-        const fileName = `after-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
-        const storagePath = `repairs/${fileName}`;
-
-        await supabase.storage
-          .from("issue-photos")
-          .upload(storagePath, options.afterPhoto, {
-            contentType: options.afterPhoto.type || "image/jpeg",
-          });
-
-        const { data: urlData } = supabase.storage
-          .from("issue-photos")
-          .getPublicUrl(storagePath);
-
-        afterPhotoUrl = urlData?.publicUrl;
-      } else {
-        afterPhotoUrl = URL.createObjectURL(options.afterPhoto);
-      }
-    }
-
     if (!isSupabaseConfigured || !supabase) {
-      setIssues((prev) =>
-        prev.map((i) =>
-          i.id === id
-            ? {
-                ...i,
-                status,
-                ...(afterPhotoUrl ? { after_photo_url: afterPhotoUrl } : {}),
-                updated_at: new Date().toISOString(),
-              }
-            : i
-        )
-      );
-      return;
+      throw new Error("Backend not configured: status changes need Supabase.");
     }
 
-    const updatePayload: Record<string, any> = { status };
-    if (afterPhotoUrl) {
-      updatePayload.after_photo_url = afterPhotoUrl;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error("Sign in as an authority to change status.");
     }
 
-    const { error: updateErr } = await supabase
-      .from("issues")
-      .update(updatePayload)
-      .eq("id", id);
+    let afterPhotoUrl: string | null = null;
+    if (options?.afterPhoto) {
+      const fileExt = options.afterPhoto.name.split(".").pop() || "jpg";
+      const fileName = `after-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+      const storagePath = `repairs/${fileName}`;
 
-    if (updateErr) {
-      throw new Error(updateErr.message);
+      const { error: uploadErr } = await supabase.storage
+        .from("issue-photos")
+        .upload(storagePath, options.afterPhoto, {
+          contentType: options.afterPhoto.type || "image/jpeg",
+        });
+      if (uploadErr) {
+        throw new Error(`Repair photo upload failed: ${uploadErr.message}`);
+      }
+      afterPhotoUrl = supabase.storage.from("issue-photos").getPublicUrl(storagePath).data
+        .publicUrl;
     }
 
-    // Add status event audit
-    try {
-      await supabase.from("status_events").insert([
-        {
-          issue_id: id,
-          status,
-          note: options?.note || null,
-        },
-      ]);
-    } catch (auditErr) {
-      console.warn("Status event audit insert notice:", auditErr);
+    // Single transaction in the database: validates the transition, updates
+    // the issue and inserts the status_events row.
+    const { data, error: rpcErr } = await supabase.rpc("advance_issue_status", {
+      p_issue_id: id,
+      p_status: status,
+      p_assignee: options?.assignee ?? null,
+      p_sla_due_at: options?.slaDueAt ?? null,
+      p_after_photo_url: afterPhotoUrl,
+      p_note: options?.note ?? null,
+    });
+
+    if (rpcErr) {
+      throw new Error(rpcErr.message);
     }
 
-    // Optimistic update
-    setIssues((prev) =>
-      prev.map((i) =>
-        i.id === id
-          ? {
-              ...i,
-              status,
-              ...(afterPhotoUrl ? { after_photo_url: afterPhotoUrl } : {}),
-              updated_at: new Date().toISOString(),
-            }
-          : i
-      )
-    );
+    const updated = data as Issue;
+    setIssues((prev) => prev.map((i) => (i.id === id ? { ...i, ...updated } : i)));
   };
 
-  const clearAlert = () => setLatestAlert(null);
+  const clearAlert = useCallback(() => setLatestAlert(null), []);
+
+  const unseenHighIds = useMemo(
+    () => issues.filter((i) => isHighSeverityAlertable(i) && !seenIds.includes(i.id)).map((i) => i.id),
+    [issues, seenIds]
+  );
+
+  const markHighSeen = useCallback(
+    (id: string) => {
+      setSeenIds((prev) => {
+        if (prev.includes(id)) return prev;
+        const next = [...prev, id];
+        try {
+          window.localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(next.slice(-500)));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const markAllHighSeen = useCallback(() => {
+    const ids = issues.filter(isHighSeverityAlertable).map((i) => i.id);
+    persistSeen(Array.from(new Set([...seenIds, ...ids])));
+    setLatestAlert(null);
+  }, [issues, seenIds, persistSeen]);
 
   return (
     <IssuesContext.Provider
@@ -452,11 +490,16 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
         isLoading,
         isConfigured: isSupabaseConfigured,
         error,
+        realtimeStatus,
         refreshIssues,
         addReportedIssue,
         updateIssueStatus,
         latestAlert,
         clearAlert,
+        unseenHighCount: unseenHighIds.length,
+        unseenHighIds,
+        markHighSeen,
+        markAllHighSeen,
       }}
     >
       {children}

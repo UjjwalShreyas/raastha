@@ -17,21 +17,38 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useApp, LanguageCode } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
+import { useIssues } from "@/context/IssuesContext";
 
 export function Navbar() {
   const pathname = usePathname();
   const { language, setLanguage, t, triggerSOS, isOnline } = useApp();
+  const { isAuthenticated } = useAuth();
+  const { unseenHighCount } = useIssues();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Home and Overview are now separate screens
-  const navLinks = [
+  // Home and Overview are now separate screens. The authority portal link is
+  // only rendered for signed-in authorities (never shown to citizens).
+  const navLinks: { href: string; label: string; icon: typeof Compass; badge?: number }[] = [
     { href: "/", label: "Home", icon: Compass },
     { href: "/overview", label: "Overview", icon: MapPin },
     { href: "/report", label: t("reportProblem"), icon: PlusCircle },
     { href: "/route", label: t("safeRoute"), icon: Navigation },
     { href: "/my-reports", label: t("myReports"), icon: CheckCircle2 },
-    { href: "/admin", label: t("authorityPortal"), icon: Building2 },
+    ...(isAuthenticated
+      ? [{ href: "/admin", label: t("authorityPortal"), icon: Building2, badge: unseenHighCount }]
+      : []),
   ];
+
+  const renderBadge = (count?: number) =>
+    count && count > 0 ? (
+      <span
+        className="min-w-4 h-4 px-1 rounded-full bg-red-700 text-white text-[9px] font-black flex items-center justify-center"
+        aria-label={`${count} unseen high-severity reports`}
+      >
+        {count}
+      </span>
+    ) : null;
 
   return (
     <header className="sticky top-0 z-[100] w-full bg-[#FFECD1]/95 backdrop-blur-xl border-b border-[#3E000C]/12 shadow-xs">
@@ -76,6 +93,7 @@ export function Navbar() {
                 >
                   <Icon className={`w-3.5 h-3.5 ${isActive ? "text-[#FFECD1]" : "text-[#3E000C]/60"}`} />
                   <span>{link.label}</span>
+                  {renderBadge(link.badge)}
                 </Link>
               );
             })}
@@ -145,6 +163,7 @@ export function Navbar() {
                 >
                   <Icon className="w-4 h-4" />
                   <span>{link.label}</span>
+                  {renderBadge(link.badge)}
                 </Link>
               );
             })}

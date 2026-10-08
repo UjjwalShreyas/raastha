@@ -326,6 +326,7 @@ export default function ReportWizardPage() {
         ward,
         photo: photoFile,
         aiSummary: isAiApplied ? description : undefined,
+        commuterEstimate: exposureCount,
       });
 
       const successMsg = `${t("reportSuccess")} ${createdRow.tracking_id}`;

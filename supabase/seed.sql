@@ -16,7 +16,8 @@ insert into public.issues (
   photo_url,
   ai_summary,
   status,
-  is_sample
+  is_sample,
+  commuter_estimate
 ) values
 (
   '3e0c0001-0000-4000-8000-000000000001',
@@ -31,7 +32,8 @@ insert into public.issues (
   'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=600&auto=format&fit=crop&q=80',
   'Severe road cavity detected. 2-wheeler spill hazard during evening rush hour.',
   'reported',
-  true
+  true,
+  6500
 ),
 (
   '3e0c0002-0000-4000-8000-000000000002',
@@ -46,7 +48,8 @@ insert into public.issues (
   'https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=600&auto=format&fit=crop&q=80',
   'Unlit dark stretch. Low illumination along pedestrian path.',
   'dispatched',
-  true
+  true,
+  4000
 ),
 (
   '3e0c0003-0000-4000-8000-000000000003',
@@ -61,6 +64,7 @@ insert into public.issues (
   'https://images.unsplash.com/photo-1584467735871-8e85353a8413?w=600&auto=format&fit=crop&q=80',
   'Exposed opening on pedestrian carriageway.',
   'in_progress',
-  true
+  true,
+  5000
 )
 on conflict (id) do nothing;

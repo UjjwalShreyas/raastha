@@ -24,10 +24,6 @@ export interface AppContextType {
   showToast: (msg: string) => void;
   clearToast: () => void;
 
-  // Authority Authentication Gate (passkey GHMC-2026)
-  isOfficerAuthenticated: boolean;
-  setOfficerAuthenticated: (val: boolean) => void;
-
   // Emergency SOS trigger (opens local SOS sheet)
   triggerSOS: () => void;
   dismissSOS: () => void;
@@ -41,9 +37,6 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<LanguageCode>("EN");
   const [toast, setToast] = useState<string | null>(null);
-
-  // Authority Authentication Gate
-  const [isOfficerAuthenticated, setOfficerAuthenticated] = useState<boolean>(false);
 
   // Network Connectivity State
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -113,8 +106,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toast,
         showToast,
         clearToast,
-        isOfficerAuthenticated,
-        setOfficerAuthenticated,
         triggerSOS,
         dismissSOS,
         isOnline,
