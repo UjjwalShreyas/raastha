@@ -319,48 +319,10 @@ npm test
 
 ---
 
-## 5. 🚀 Quickstart & Setup Guide
 
-### 1. Prerequisites
-- Node.js 18.x or 20.x+
-- Google Gemini API Key
-- Roboflow API Key (Optional: for RF-DETR model workflows)
-- Supabase Project (Optional: configured with `supabase/schema.sql`)
-
-### 2. Installation
-```bash
-git clone https://github.com/UjjwalShreyas/raastha.git
-cd raastha
-npm install
 ```
 
-### 3. Environment Configuration
-Create a `.env.local` file in the root directory:
-```env
-# Google Gemini API Key
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Roboflow Computer Vision
-ROBOFLOW_API_KEY=your_roboflow_api_key_here
-ROBOFLOW_WORKFLOW_URL=https://serverless.roboflow.com/safestreets/workflows/potholes-vpotholes-xbcxz-4w0zz-1-rfdetr-medium-t1-logic
-
-# OpenRouteService (Optional: falls back to straight-line corridor engine if absent)
-ORS_API_KEY=your_openrouteservice_key_here
-
-# Supabase (Optional: falls back to serverless in-memory store)
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_publishable_anon_key_here
-```
-
-### 4. Run Development Server
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
----
-
-## 6. ⚖️ Honest Scope & Production Comparison
+## 4. ⚖️ Honest Scope & Production Comparison
 
 | Dimension | Current Prototype Implementation | Production Enterprise Scaling Plan |
 | :--- | :--- | :--- |
